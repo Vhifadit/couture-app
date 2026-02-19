@@ -3,12 +3,28 @@ const express = require('express');
 // permet de créer une application express et gérer la base
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+dotenv.config();
+const path = require('path'); 
 
 // Routes
 const authRoutes = require('./routes/auth');
 
+const orderRoutes = require('./routes/order'); 
+
+const couturierRoutes = require('./routes/couturier');
+
+const clientRoutes = require('./routes/client');
+
+// app.js - Ajouter après les middlewares globaux
+
+// Servir les fichiers statiques (uploads)
+
+
+
+
+
 // Charger les variables d'environnement
-dotenv.config();
+
 
 // Créer l'app
 const app = express();
@@ -19,6 +35,14 @@ app.use(express.json());
 
 // Monter les routes principales de l'API
 app.use('/auth', authRoutes);
+
+app.use('/orders', orderRoutes);
+
+app.use('/couturiers', couturierRoutes);
+
+app.use('/clients', clientRoutes);
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connexion à MongoDB avec Mongoose
 // Utilise MONGO_URI si défini dans .env, sinon garde votre URI actuelle
