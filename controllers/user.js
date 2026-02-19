@@ -31,13 +31,24 @@ exports.register = async (req, res) => {
     }
 
     // Récupération du rôle, par défaut "client"
-    const wantedRoleName = roleName || 'client';
-    const role = await Role.findOne({ name: wantedRoleName });
-    if (!role) {
-      return res.status(400).json({
-        message: `Rôle inconnu: ${wantedRoleName}. Veuillez d'abord initialiser les rôles (admin, couturier, client).`,
-      });
-    }
+    // 🔒 Rôles autorisés pour inscription publique
+const allowedRoles = ['client', 'couturier'];
+
+const wantedRoleName = roleName || 'client';
+
+if (!allowedRoles.includes(wantedRoleName)) {
+  return res.status(403).json({
+    message: "Vous ne pouvez pas créer un compte avec ce rôle"
+  });
+}
+
+const role = await Role.findOne({ name: wantedRoleName });
+
+if (!role) {
+  return res.status(400).json({
+    message: `Rôle ${wantedRoleName} non initialisé en base`
+  });
+}
 
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
