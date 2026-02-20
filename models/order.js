@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
+  // Liens
   client_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -11,70 +12,75 @@ const orderSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  // ✅ CORRIGÉ: service_type (pas service_id)
+
+  // Service demandé
   service_type: {
     type: String,
-    required: true,
-    enum: ['RETOUCHE', 'CREATION_SUR_MESURE', 'CONFECTION', 'AUTRE']
-  },
-  // ✅ OPTIONNEL: adresse de rendez-vous (pas location_id)
-  meeting_address: {
-    type: String,
-    default: null
-  },
-  date: {
-    type: Date,
+    enum: ['RETOUCHE', 'CREATION_SUR_MESURE', 'CONFECTION', 'AUTRE'],
     required: true
   },
-  start_time: {
-    type: String,
-    required: true
-  },
-  end_time: {
-    type: String,
-    required: true,
-    validate: {
-      validator: function(v) {
-        return v > this.start_time;
-      },
-      message: 'end_time doit être après start_time'
-    }
-  },
+
+  // Créneau
+  date: { type: Date, required: true },
+  start_time: { type: String, required: true },
+  end_time: { type: String, required: true },
+
+  // Statut commande
   status: {
     type: String,
     enum: ['PLANNED', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'MODIFIED'],
     default: 'PLANNED'
   },
-  notes: {
-    type: String,
-    default: null
+
+  // ✅ LIVRAISON (nouveau)
+  livraison: {
+    mode: {
+      type: String,
+      enum: ['RETRAIT_ATELIER', 'LIVRAISON'],
+      default: 'RETRAIT_ATELIER'
+    },
+    adresse_retrait: {
+      type: String, // "Atelier principal" ou adresse spécifique
+      default: 'Atelier du couturier'
+    },
+    adresse_livraison: {
+      rue: String,
+      quartier: String,
+      ville: String,
+      instructions: String
+    },
+    cout_livraison: {
+      type: Number,
+      default: 0
+    },
+    statut_livraison: {
+      type: String,
+      enum: ['EN_ATTENTE', 'EN_COURS', 'LIVREE', 'ANNULEE'],
+      default: 'EN_ATTENTE'
+    },
+    date_livraison_prevue: Date,
+    date_livraison_effective: Date
   },
+
+  // Détails
+  notes: String,
   measurements: {
     type: Map,
-    of: String,
-    default: {}
+    of: Number
   },
-  estimated_price: {
-    type: Number,
-    default: null
-  },
-  // ✅ AJOUTÉ: prix final après négociation
-  final_price: {
-    type: Number,
-    default: null
-  },
-  history: [{
-    status: String,
-    changed_at: { type: Date, default: Date.now },
-    changed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    reason: String  // ✅ Pourquoi le changement
+
+  // Historique modifications
+  modifications: [{
+    date: { type: Date, default: Date.now },
+    type: String,
+    description: String
   }]
+
 }, { timestamps: true });
 
 // Index
-orderSchema.index({ client_id: 1, createdAt: -1 });
-orderSchema.index({ couturier_id: 1, date: 1 });
-orderSchema.index({ status: 1 });
-orderSchema.index({ service_type: 1 });
+orderSchema.index({ client_id: 1 });
+orderSchema.index({ couturier_id: 1 });
+orderSchema.index({ date: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

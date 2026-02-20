@@ -9,6 +9,11 @@ router.post('/', authenticate, authorize('client'), orderController.createOrder)
 // GET /orders → voir ses commandes (tous les rôles)
 router.get('/', authenticate, orderController.getOrders);
 
+// ✅ ROUTES LIVRAISON - AVANT /:id
+router.put('/:id/livraison', authenticate, authorize('client'), orderController.setDeliveryMode);
+router.put('/:id/livraison/status', authenticate, authorize('couturier'), orderController.updateDeliveryStatus);
+router.get('/:id/livraison', authenticate, orderController.getDeliveryDetails);
+
 // GET /orders/:id → détail d'une commande
 router.get('/:id', authenticate, orderController.getOrderById);
 

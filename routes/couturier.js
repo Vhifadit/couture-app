@@ -1,21 +1,11 @@
-// routes/couturier.js
 const express = require('express');
 const router = express.Router();
 const couturierController = require('../controllers/couturier');
 const { authenticate, authorize } = require('../middlewares/auth');
 const { upload, ensureUploadDir } = require('../middlewares/upload');
 
-// ========== ROUTES PUBLliQUES ==========
-
-// Recherche
-router.get('/search', couturierController.searchCouturiers);
-router.get('/nearby', couturierController.searchNearby);
-
-// Profil public + photos
-router.get('/:id', couturierController.getCouturierById);
-router.get('/:id/photos', couturierController.getPhotos); // Voir photos d'un couturier
-
 // ========== ROUTES PROTÉGÉES (Couturier uniquement) ==========
+// ✅ METTRE AVANT les routes publiques avec /:id
 
 // Profil
 router.post('/profile', authenticate, authorize('couturier'), couturierController.createProfile);
@@ -23,13 +13,13 @@ router.get('/profile/me', authenticate, authorize('couturier'), couturierControl
 router.put('/profile/me', authenticate, authorize('couturier'), couturierController.updateProfile);
 router.put('/availability', authenticate, authorize('couturier'), couturierController.setAvailability);
 
-// ✅ Gestion des photos (NOUVEAU)
+// ✅ Gestion des photos - AVANT les routes avec /:id
 router.post(
   '/photos',
   authenticate,
   authorize('couturier'),
   ensureUploadDir,
-  upload.array('photos', 5), // Max 5 photos
+  upload.array('photos', 5),
   couturierController.uploadPhotos
 );
 
@@ -53,5 +43,16 @@ router.put(
   authorize('couturier'),
   couturierController.updatePhotoInfo
 );
+
+// ========== ROUTES PUBLIQUES ==========
+// ✅ APRÈS les routes spécifiques
+
+// Recherche
+router.get('/search', couturierController.searchCouturiers);
+router.get('/nearby', couturierController.searchNearby);
+
+// Profil public + photos - DERNIER car /:id capture tout
+router.get('/:id/photos', couturierController.getPhotos);
+router.get('/:id', couturierController.getCouturierById);
 
 module.exports = router;

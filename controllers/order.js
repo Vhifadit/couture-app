@@ -1,13 +1,17 @@
 const Order = require('../models/order');
 const User = require('../models/user');
 
+const { createConversation } = require('./chat');
+
+
+// ========== FONCTIONS EXISTANTES ==========
+
 // POST /orders → créer une commande
 const createOrder = async (req, res) => {
   try {
     const {
       couturier_id,
       service_type,
-      location,
       date,
       start_time,
       end_time,
@@ -15,13 +19,11 @@ const createOrder = async (req, res) => {
       measurements
     } = req.body;
 
-    // Récupérer l'ID du client depuis le token JWT
     const client_id = req.user.sub;
 
-    // Vérifications de base
     if (!couturier_id || !service_type || !date || !start_time || !end_time) {
       return res.status(400).json({ 
-        message: 'Champs obligatoires manquants: couturier_id, service_type, date, start_time, end_time' 
+        message: 'Champs obligatoires manquants' 
       });
     }
 
@@ -29,24 +31,18 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'start_time doit être avant end_time' });
     }
 
-    // Vérifier que le couturier existe
     const couturier = await User.findById(couturier_id).populate('role');
-    if (!couturier) {
-      return res.status(404).json({ message: 'Couturier non trouvé' });
-    }
-    if (couturier.role.name !== 'couturier') {
-      return res.status(400).json({ message: 'L\'utilisateur sélectionné n\'est pas un couturier' });
+    if (!couturier || couturier.role.name !== 'couturier') {
+      return res.status(400).json({ message: 'Couturier invalide' });
     }
 
-    // Vérifier les conflits de créneau
     const existingOrder = await Order.findOne({
       couturier_id,
       date,
       status: { $ne: 'CANCELLED' },
       $or: [
         { start_time: { $lt: end_time, $gte: start_time } },
-        { end_time: { $gt: start_time, $lte: end_time } },
-        { start_time: { $lte: start_time }, end_time: { $gte: end_time } }
+        { end_time: { $gt: start_time, $lte: end_time } }
       ]
     });
 
@@ -56,21 +52,28 @@ const createOrder = async (req, res) => {
       });
     }
 
-    // Création de la commande
     const newOrder = await Order.create({
       client_id,
       couturier_id,
       service_type,
-      location: location || null,
       date,
       start_time,
       end_time,
       notes: notes || null,
       measurements: measurements || {},
-      status: 'PLANNED'
+      status: 'PLANNED',
+      livraison: {
+        mode: 'RETRAIT_ATELIER',
+        statut_livraison: 'EN_ATTENTE'
+      }
     });
+    await createConversation(
+  newOrder._id,
+  client_id,
+  couturier_id,
+  `Commande #${newOrder._id.toString().slice(-6)} - ${service_type}`
+);
 
-    // Populate pour la réponse
     const populatedOrder = await Order.findById(newOrder._id)
       .populate('client_id', 'name email')
       .populate('couturier_id', 'name email');
@@ -86,6 +89,7 @@ const createOrder = async (req, res) => {
   }
 };
 
+
 // GET /orders → voir ses commandes
 const getOrders = async (req, res) => {
   try {
@@ -94,13 +98,11 @@ const getOrders = async (req, res) => {
 
     let query = {};
     
-    // Filtrer selon le rôle
     if (userRole === 'client') {
       query.client_id = userId;
     } else if (userRole === 'couturier') {
       query.couturier_id = userId;
     }
-    // Admin voit tout (pas de filtre)
 
     const orders = await Order.find(query)
       .populate('client_id', 'name email')
@@ -109,7 +111,6 @@ const getOrders = async (req, res) => {
 
     return res.json({ orders });
   } catch (error) {
-    console.error('Get orders error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
@@ -119,7 +120,6 @@ const getOrderById = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.sub;
-    const userRole = req.user.role;
 
     const order = await Order.findById(id)
       .populate('client_id', 'name email')
@@ -129,17 +129,15 @@ const getOrderById = async (req, res) => {
       return res.status(404).json({ message: 'Commande non trouvée' });
     }
 
-    // Vérifier les permissions
     const isOwner = order.client_id._id.toString() === userId || 
                     order.couturier_id._id.toString() === userId;
     
-    if (!isOwner && userRole !== 'admin') {
+    if (!isOwner && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Accès interdit' });
     }
 
     return res.json({ order });
   } catch (error) {
-    console.error('Get order error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
@@ -150,13 +148,10 @@ const updateStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const userId = req.user.sub;
-    const userRole = req.user.role;
 
     const validStatuses = ['PLANNED', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ 
-        message: `Statut invalide. Valeurs acceptées: ${validStatuses.join(', ')}` 
-      });
+      return res.status(400).json({ message: 'Statut invalide' });
     }
 
     const order = await Order.findById(id);
@@ -164,18 +159,11 @@ const updateStatus = async (req, res) => {
       return res.status(404).json({ message: 'Commande non trouvée' });
     }
 
-    // Vérifier les permissions selon le statut
     const isCouturier = order.couturier_id.toString() === userId;
     const isClient = order.client_id.toString() === userId;
 
-    // Seul le couturier peut confirmer/démarrer/terminer
-    if (['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(status) && !isCouturier && userRole !== 'admin') {
+    if (['CONFIRMED', 'IN_PROGRESS'].includes(status) && !isCouturier) {
       return res.status(403).json({ message: 'Seul le couturier peut changer vers ce statut' });
-    }
-
-    // Le client peut annuler sa commande
-    if (status === 'CANCELLED' && !isClient && !isCouturier && userRole !== 'admin') {
-      return res.status(403).json({ message: 'Accès interdit' });
     }
 
     order.status = status;
@@ -190,7 +178,6 @@ const updateStatus = async (req, res) => {
       order: updatedOrder
     });
   } catch (error) {
-    console.error('Update status error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
@@ -207,20 +194,17 @@ const updateOrder = async (req, res) => {
       return res.status(404).json({ message: 'Commande non trouvée' });
     }
 
-    // Vérifier que c'est bien le client
     if (order.client_id.toString() !== userId) {
       return res.status(403).json({ message: 'Vous ne pouvez modifier que vos commandes' });
     }
 
-    // Ne pas modifier si déjà confirmée ou en cours
-    if (['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(order.status)) {
+    if (!['PLANNED', 'MODIFIED'].includes(order.status)) {
       return res.status(400).json({ 
-        message: 'Impossible de modifier une commande déjà confirmée ou en cours' 
+        message: 'Impossible de modifier une commande déjà confirmée' 
       });
     }
 
-    // Champs autorisés à modifier
-    const allowedUpdates = ['date', 'start_time', 'end_time', 'notes', 'measurements', 'location'];
+    const allowedUpdates = ['date', 'start_time', 'end_time', 'notes', 'measurements'];
     allowedUpdates.forEach(field => {
       if (updates[field] !== undefined) {
         order[field] = updates[field];
@@ -230,16 +214,11 @@ const updateOrder = async (req, res) => {
     order.status = 'MODIFIED';
     await order.save();
 
-    const updatedOrder = await Order.findById(id)
-      .populate('client_id', 'name email')
-      .populate('couturier_id', 'name email');
-
     return res.json({
       message: 'Commande modifiée',
-      order: updatedOrder
+      order
     });
   } catch (error) {
-    console.error('Update order error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
@@ -249,7 +228,6 @@ const cancelOrder = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.sub;
-    const userRole = req.user.role;
 
     const order = await Order.findById(id);
     if (!order) {
@@ -259,7 +237,7 @@ const cancelOrder = async (req, res) => {
     const isOwner = order.client_id.toString() === userId || 
                     order.couturier_id.toString() === userId;
 
-    if (!isOwner && userRole !== 'admin') {
+    if (!isOwner && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Accès interdit' });
     }
 
@@ -272,17 +250,146 @@ const cancelOrder = async (req, res) => {
 
     return res.json({ message: 'Commande annulée avec succès' });
   } catch (error) {
-    console.error('Cancel order error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
 
+// ========== FONCTIONS LIVRAISON ==========
+
+// ✅ Choisir mode de livraison (Client)
+const setDeliveryMode = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { mode, adresse_livraison, cout_livraison } = req.body;
+    const userId = req.user.sub;
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ message: 'Commande non trouvée' });
+    }
+
+    if (order.client_id.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès interdit' });
+    }
+
+    if (!['PLANNED', 'MODIFIED'].includes(order.status)) {
+      return res.status(400).json({ 
+        message: 'Impossible de modifier la livraison après confirmation' 
+      });
+    }
+
+    order.livraison.mode = mode || 'RETRAIT_ATELIER';
+    
+    if (mode === 'LIVRAISON') {
+      order.livraison.adresse_livraison = adresse_livraison;
+      order.livraison.cout_livraison = cout_livraison || 1500;
+    } else {
+      order.livraison.adresse_retrait = 'Atelier du couturier';
+      order.livraison.cout_livraison = 0;
+    }
+
+    await order.save();
+
+    res.json({
+      message: 'Mode de livraison mis à jour',
+      livraison: order.livraison
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// ✅ Mettre à jour statut livraison (Couturier)
+const updateDeliveryStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { statut_livraison, date_livraison_prevue } = req.body;
+    const userId = req.user.sub;
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ message: 'Commande non trouvée' });
+    }
+
+    if (order.couturier_id.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès interdit' });
+    }
+
+    const validStatuses = ['EN_ATTENTE', 'EN_COURS', 'LIVREE', 'ANNULEE'];
+    if (!validStatuses.includes(statut_livraison)) {
+      return res.status(400).json({ message: 'Statut invalide' });
+    }
+
+    order.livraison.statut_livraison = statut_livraison;
+    
+    if (date_livraison_prevue) {
+      order.livraison.date_livraison_prevue = date_livraison_prevue;
+    }
+    
+    if (statut_livraison === 'LIVREE') {
+      order.livraison.date_livraison_effective = new Date();
+      order.status = 'COMPLETED';
+    }
+
+    await order.save();
+
+    res.json({
+      message: 'Statut livraison mis à jour',
+      livraison: order.livraison
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// ✅ Voir détails livraison
+const getDeliveryDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.sub;
+
+    const order = await Order.findById(id)
+      .populate('client_id', 'name telephone')
+      .populate('couturier_id', 'name telephone adresse');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Commande non trouvée' });
+    }
+
+    const isOwner = order.client_id._id.toString() === userId || 
+                    order.couturier_id._id.toString() === userId;
+    
+    if (!isOwner && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Accès interdit' });
+    }
+
+    res.json({
+      livraison: order.livraison,
+      commande: {
+        id: order._id,
+        status: order.status,
+        client: order.client_id,
+        couturier: order.couturier_id
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+
+// ========== EXPORTS ==========
 module.exports = {
   createOrder,
   getOrders,
   getOrderById,
   updateStatus,
   updateOrder,
-  cancelOrder
+  cancelOrder,
+  setDeliveryMode,
+  updateDeliveryStatus,
+  getDeliveryDetails
 };
-

@@ -6,7 +6,7 @@ const Role = require('../models/role');
 // Helpers
 function signAccessToken(payload) {
   const secret = process.env.JWT_ACCESS_SECRET || 'dev_access_secret_change_me';
-  const expiresIn = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+  const expiresIn = process.env.JWT_ACCESS_EXPIRES_IN || '24h';
   return jwt.sign(payload, secret, { expiresIn });
 }
 
