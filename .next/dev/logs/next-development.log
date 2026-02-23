@@ -1,0 +1,19 @@
+[00:00:01.717] Server  LOG     ✓ Ready in 1198ms
+[00:00:09.105] Server  LOG     ○ Compiling / ...
+[00:00:10.838] Server  WARN    MUI Grid: The `item` prop has been removed and is no longer necessary. You can safely remove it.
+
+[00:00:10.839] Server  WARN    MUI Grid: The `xs` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+
+[00:00:10.840] Server  WARN    MUI Grid: The `sm` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+
+[00:00:10.841] Server  WARN    MUI Grid: The `md` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+
+[00:00:11.149] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:11.347] Browser WARN    MUI Grid: The `item` prop has been removed and is no longer necessary. You can safely remove it.
+
+[00:00:11.347] Browser WARN    MUI Grid: The `xs` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+
+[00:00:11.347] Browser WARN    MUI Grid: The `sm` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+
+[00:00:11.347] Browser WARN    MUI Grid: The `md` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+

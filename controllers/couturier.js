@@ -54,25 +54,41 @@ const createProfile = async (req, res) => {
 // Recherche par zone (existant)
 const searchCouturiers = async (req, res) => {
   try {
-    const { ville, quartier, service, disponible } = req.query;
+    let { ville, quartier, service, disponible } = req.query;
+    
+    // ✅ Convertir en string si c'est un tableau
+    if (Array.isArray(ville)) ville = ville[0];
+    if (Array.isArray(quartier)) quartier = quartier[0];
+    if (Array.isArray(service)) service = service[0];
+    if (Array.isArray(disponible)) disponible = disponible[0];
+    
+    // ✅ Forcer en string
+    ville = ville ? String(ville) : '';
+    quartier = quartier ? String(quartier) : '';
+    service = service ? String(service) : '';
+    disponible = disponible ? String(disponible) : '';
+    
+    console.log('Params:', { ville, quartier, service, disponible });
     
     let query = {};
     
-    if (ville) {
+    if (ville.trim() !== '') {
       query['adresse.ville'] = new RegExp(ville, 'i');
     }
     
-    if (quartier) {
+    if (quartier.trim() !== '') {
       query['adresse.quartier'] = new RegExp(quartier, 'i');
     }
     
-    if (service) {
+    if (service.trim() !== '') {
       query.services = service;
     }
     
     if (disponible === 'true') {
       query.disponibilite = true;
     }
+    
+    console.log('MongoDB query:', query);
     
     const couturiers = await Couturier.find(query)
       .populate('user_id', 'name email')
@@ -86,7 +102,6 @@ const searchCouturiers = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
-
 // Recherche géographique (existant)
 const searchNearby = async (req, res) => {
   try {

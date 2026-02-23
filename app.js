@@ -16,6 +16,8 @@ const couturierRoutes = require('./routes/couturier');
 const clientRoutes = require('./routes/client');
 
 const articleRoutes = require('./routes/article');
+
+
 // ...
 
 
@@ -49,6 +51,8 @@ app.use('/clients', clientRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/articles', articleRoutes);
+
+
 
 // Connexion à MongoDB avec Mongoose
 // Utilise MONGO_URI si défini dans .env, sinon garde votre URI actuelle
