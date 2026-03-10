@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: var(--pierre-light);
+  }
+}
+
+:root {
+  --emeraude: #2D6A4F;
+  --emeraude-dark: #1B4332;
+  --emeraude-light: #52B788;
+  --pierre: #C9B99A;
+  --pierre-light: #F5EFE6;
+  --pierre-dark: #A08060;
+  --ardoise: #4A5568;
+  --ardoise-light: #718096;
+}
+
+body {
+  background-color: var(--pierre-light);
+}
+
+@layer components {
+/* Grilles */
+.grid-couturiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+.grid-articles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* Avatars couleurs */
+.avatar-pierre { background-color: #A08060; }
+.avatar-beige { background-color: #C9B99A; }
+
+/* Hauteur placeholder image */
+.img-placeholder-lg { height: 160px; }
+.img-placeholder-md { height: 150px; }
+.img-placeholder-sm { height: 140px; }
+
+  /* Chat layout */
+.chat-container {
+  height: 500px;
+}
+.chat-sidebar {
+  width: 288px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid #F5EFE6;
+}
+.chat-input-border {
+  border: 1px solid var(--pierre);
+  border-radius: 0.5rem;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  color: var(--ardoise);
+  outline: none;
+  flex: 1;
+}
+
+  /* Textes */
+  .text-em { color: var(--emeraude); }
+  .text-em-dark { color: var(--emeraude-dark); }
+  .text-em-light { color: var(--emeraude-light); }
+  .text-pierre { color: var(--pierre); }
+  .text-ardoise { color: var(--ardoise); }
+  .text-ardoise-light { color: var(--ardoise-light); }
+
+  /* Fonds */
+  .bg-em { background-color: var(--emeraude); }
+  .bg-em-dark { background-color: var(--emeraude-dark); }
+  .bg-pierre { background-color: var(--pierre); }
+  .bg-pierre-light { background-color: var(--pierre-light); }
+  .bg-pierre-dark { background-color: var(--pierre-dark); }
+
+  /* Bordures */
+  .border-pierre { border: 1px solid var(--pierre); }
+  .border-b-pierre { border-bottom: 1px solid var(--pierre-light); }
+  .border-t-pierre { border-top: 1px solid var(--pierre); }
+
+  /* Carte standard */
+  .card {
+    background-color: white;
+    border-radius: 0.75rem;
+    border: 1px solid var(--pierre);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    overflow: hidden;
+  }
+
+  /* Tableau */
+  .table-header {
+    background-color: var(--pierre-light);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ardoise);
+    text-align: left;
+    padding: 10px 20px;
+  }
+  .table-row { border-top: 1px solid var(--pierre-light); }
+  .table-cell { padding: 14px 20px; font-size: 0.875rem; }
+
+  /* Boutons */
+  .btn-em {
+    background-color: var(--emeraude);
+    color: white;
+    border: none;
+    border-radius: 0.375rem;
+    padding: 8px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-outline {
+    background-color: var(--pierre-light);
+    color: var(--ardoise);
+    border: 1px solid var(--pierre);
+    border-radius: 0.375rem;
+    padding: 8px 14px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn-pill {
+    border-radius: 9999px;
+    padding: 6px 16px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn-pill-active {
+    background-color: var(--emeraude);
+    color: white;
+    border: 1px solid var(--emeraude);
+  }
+  .btn-pill-inactive {
+    background-color: var(--pierre-light);
+    color: var(--ardoise);
+    border: 1px solid var(--pierre);
+  }
+
+  /* Searchbar */
+  .searchbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: white;
+    border: 1px solid var(--pierre);
+    border-radius: 8px;
+    padding: 8px 14px;
+    flex: 1;
+  }
+  .searchbar input {
+    border: none;
+    outline: none;
+    font-size: 14px;
+    color: var(--ardoise);
+    width: 100%;
+    background-color: transparent;
+  }
+
+  /* Chat */
+  .chat-bubble-me {
+    max-width: 60%;
+    padding: 10px 14px;
+    border-radius: 12px 12px 0 12px;
+    background-color: var(--emeraude);
+    color: white;
+    font-size: 13px;
+  }
+  .chat-bubble-other {
+    max-width: 60%;
+    padding: 10px 14px;
+    border-radius: 12px 12px 12px 0;
+    background-color: var(--pierre-light);
+    color: var(--ardoise);
+    font-size: 13px;
+  }
+  .chat-time {
+    font-size: 10px;
+    margin-top: 4px;
+    opacity: 0.7;
+    text-align: right;
+  }
+
+  /* Avatar initiale */
+  .avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    flex-shrink: 0;
+  }
+}
