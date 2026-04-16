@@ -6,6 +6,9 @@ const { authenticate, authorize } = require('../middlewares/auth');
 // POST /orders → créer une commande (client uniquement)
 router.post('/', authenticate, authorize('client'), orderController.createOrder);
 
+// GET /orders/unread → compter PLANNED (couturier)
+router.get('/unread', authenticate, authorize('couturier'), orderController.getUnreadOrders);
+
 // GET /orders → voir ses commandes (tous les rôles)
 router.get('/', authenticate, orderController.getOrders);
 
@@ -23,7 +26,11 @@ router.put('/:id/status', authenticate, authorize('couturier', 'admin'), orderCo
 // PUT /orders/:id → modifier une commande (avant confirmation)
 router.put('/:id', authenticate, authorize('client'), orderController.updateOrder);
 
+// ✅ NOUVEAU: Compteur commandes PLANNED pour couturier
+router.get('/unread', authenticate, authorize('couturier'), orderController.getUnreadOrders);
+
 // DELETE /orders/:id → annuler une commande
 router.delete('/:id', authenticate, authorize('client', 'admin'), orderController.cancelOrder);
 
 module.exports = router;
+

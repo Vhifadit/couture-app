@@ -131,11 +131,11 @@ export default function CouturierCommandesPage() {
                     <td className="table-cell font-medium text-em">#{c._id?.slice(-6)}</td>
                     <td className="table-cell font-medium text-ardoise">{getServiceLabel(c.service_type)}</td>
                     <td className="table-cell text-ardoise-light">
-                      {typeof c.client_id === 'object' ? c.client_id?.name || "Client" : "Client"}
+                      {typeof c.client_id === 'object' ? c.client_id?.name || 'Client anonyme' : 'Client anonyme'}
                     </td>
                     <td className="table-cell text-ardoise-light">
                       <span className="flex items-center gap-1">
-                        <Clock size={13} /> {c.date ? new Date(c.date).toLocaleDateString('fr-FR') : "-"}
+                      <Clock size={13} /> {c.date_rendez_vous ? new Date(c.date_rendez_vous as string).toLocaleDateString('fr-FR') : new Date(c.createdAt as string).toLocaleDateString('fr-FR')}
                       </span>
                     </td>
                     <td className="table-cell">

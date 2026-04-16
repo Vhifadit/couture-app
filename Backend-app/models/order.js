@@ -20,10 +20,13 @@ const orderSchema = new mongoose.Schema({
     required: true
   },
 
-  // Créneau
-  date: { type: Date, required: true },
-  start_time: { type: String, required: true },
-  end_time: { type: String, required: true },
+  // Rendez-vous (date et heure de rencontre avec le couturier)
+  date_rendez_vous: { type: Date, required: true },
+  heure_rendez_vous: { type: String, required: true },
+
+  // Date limite de livraison (quand le client veut recevoir sa commande)
+  date_limite: { type: Date, required: true },
+  heure_limite: { type: String, required: true },
 
   // Statut commande
   status: {
@@ -62,6 +65,13 @@ const orderSchema = new mongoose.Schema({
     date_livraison_effective: Date
   },
 
+  // ✅ NOUVEAU: Prix
+  prix_estime: {
+    tarif_service: { type: Number, default: 0 },
+    cout_livraison: { type: Number, default: 0 },
+    total: { type: Number, default: 0 }
+  },
+
   // Détails
   notes: String,
   measurements: {
@@ -76,11 +86,13 @@ const orderSchema = new mongoose.Schema({
     description: String
   }]
 
+
 }, { timestamps: true });
 
 // Index
 orderSchema.index({ client_id: 1 });
 orderSchema.index({ couturier_id: 1 });
-orderSchema.index({ date: 1 });
+orderSchema.index({ date_rendez_vous: 1 });
+orderSchema.index({ date_limite: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

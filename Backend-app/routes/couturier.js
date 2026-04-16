@@ -54,6 +54,9 @@ router.get('/nearby', couturierController.searchNearby);
 // ✅ NOUVEAU: Meilleurs couturiers (pour page d'accueil)
 router.get('/top', couturierController.getTopCouturiers);
 
+// ✅ NOUVEAU: Tarifs publics (POUR FORMULAIRE COMMANDE) - AVANT /:id
+router.get('/:id/tarifs', couturierController.getTarifsById);
+
 // Profil public + photos - DERNIER car /:id capture tout
 router.get('/:id/photos', couturierController.getPhotos);
 router.get('/:id', couturierController.getCouturierById);

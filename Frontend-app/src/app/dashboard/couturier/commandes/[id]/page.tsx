@@ -134,7 +134,7 @@ export default function CouturierCommandeDetailsPage() {
               <Badge status={getStatutDisplay(commande.status)} />
             </div>
             <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
-              <Calendar size={14} /> Passee le {formatDate(commande.date)}
+              <Calendar size={14} /> Passee le {formatDate(commande.date_rendez_vous)}
             </p>
           </div>
         </div>
@@ -188,8 +188,14 @@ export default function CouturierCommandeDetailsPage() {
                   <p className="font-medium text-gray-900">{getServiceLabel(commande.service_type)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Horaire</p>
-                  <p className="font-medium text-gray-900">{commande.start_time} - {commande.end_time}</p>
+                  <p className="text-sm text-gray-500">Rendez-vous</p>
+                  <p className="font-medium text-gray-900">{formatDate(commande.date_rendez_vous)} à {commande.heure_rendez_vous}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <p className="text-sm text-gray-500">Date limite</p>
+                  <p className="font-medium text-gray-900">{formatDate(commande.date_limite)} à {commande.heure_limite}</p>
                 </div>
               </div>
               <div className="pt-4 border-t border-gray-100">

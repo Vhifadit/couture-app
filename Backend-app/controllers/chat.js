@@ -40,7 +40,7 @@ const getMyConversations = async (req, res) => {
     }
 
     const conversations = await Conversation.find(query)
-      .populate('order_id', 'status date service_type')
+      .populate('order_id', 'status date_rendez_vous service_type date_limite')
       .populate('client_id', 'name')
       .populate('couturier_id', 'name')
       .populate('dernier_message.expediteur_id', 'name')
@@ -73,7 +73,7 @@ const getConversation = async (req, res) => {
     const userRole = req.user.role;
 
     const conversation = await Conversation.findById(id)
-      .populate('order_id', 'status date service_type start_time end_time')
+      .populate('order_id', 'status date_rendez_vous service_type date_limite heure_limite')
       .populate('client_id', 'name email')
       .populate('couturier_id', 'name email');
 

@@ -47,7 +47,7 @@ const getMyArticles = async (req, res) => {
   try {
     const userId = req.user.sub;
     
-    const couturier = await Couturier.findOne({ user_id: userId });
+    const couturier = await Couturier.findOne({ user_id: userId }).populate('user_id');
     if (!couturier) {
       return res.status(404).json({ message: 'Profil couturier non trouvé' });
     }

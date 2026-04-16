@@ -1,7 +1,20 @@
 const Order = require('../models/order');
 const User = require('../models/user');
+const Couturier = require('../models/couturier');
+const nodemailer = require('nodemailer'); // ✅ NOUVEAU: Notifications
 
 const { createConversation } = require('./chat');
+
+// ✅ Config email (à adapter avec vos credentials)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER || 'no-reply@tailleurconnect.com',
+    pass: process.env.EMAIL_PASS || ''
+  }
+});
+
+
 
 
 // ========== FONCTIONS EXISTANTES ==========
@@ -12,39 +25,54 @@ const createOrder = async (req, res) => {
     const {
       couturier_id,
       service_type,
-      date,
-      start_time,
-      end_time,
+      date_rendez_vous,
+      heure_rendez_vous,
+      date_limite,
+      heure_limite,
       notes,
       measurements
     } = req.body;
 
     const client_id = req.user.sub;
 
-    if (!couturier_id || !service_type || !date || !start_time || !end_time) {
+    if (!couturier_id || !service_type || !date_rendez_vous || !heure_rendez_vous || !date_limite || !heure_limite) {
       return res.status(400).json({ 
         message: 'Champs obligatoires manquants' 
       });
     }
 
-    if (start_time >= end_time) {
-      return res.status(400).json({ message: 'start_time doit être avant end_time' });
-    }
 
-    const couturier = await User.findById(couturier_id).populate('role');
+    // Récupérer le profil couturier puis l'utilisateur associé (avec role populated)
+    const couturierProfile = await Couturier.findById(couturier_id).populate({
+      path: 'user_id',
+      populate: { path: 'role' }
+    });
+    if (!couturierProfile) {
+      return res.status(400).json({ message: 'Profil couturier non trouvé' });
+    }
+    
+    const couturier = couturierProfile.user_id;
     if (!couturier || couturier.role.name !== 'couturier') {
-      return res.status(400).json({ message: 'Couturier invalide' });
+      return res.status(400).json({ message: 'Utilisateur non autorisé comme couturier' });
     }
 
+
+
+    // Vérifier la disponibilité du couturier pour le rendez-vous
+    const heureDebut = heure_rendez_vous;
+    const heureFin = '18:00'; // Durée standard d'1h30 par rendez-vous
     const existingOrder = await Order.findOne({
       couturier_id,
-      date,
+      date_rendez_vous,
       status: { $ne: 'CANCELLED' },
-      $or: [
-        { start_time: { $lt: end_time, $gte: start_time } },
-        { end_time: { $gt: start_time, $lte: end_time } }
-      ]
+      $expr: {
+        $and: [
+          { $gte: ['$heure_rendez_vous', heureDebut] },
+          { $lte: ['$heure_rendez_vous', heureFin] }
+        ]
+      }
     });
+
 
     if (existingOrder) {
       return res.status(409).json({ 
@@ -52,37 +80,95 @@ const createOrder = async (req, res) => {
       });
     }
 
+    // ✅ VALIDATION DATES: RDV avant limite
+    const rdvDate = new Date(`${date_rendez_vous}T${heure_rendez_vous}`);
+    const limiteDate = new Date(`${date_limite}T${heure_limite}`);
+    if (rdvDate >= limiteDate) {
+      return res.status(400).json({ 
+        message: 'La date de rendez-vous doit être avant la date limite' 
+      });
+    }
+
+    // ✅ CALCUL PRIX TOTAL
+    let prix_total = 0;
+    let estimation_tarif = 0;
+    
+    // Tarif service depuis profil couturier
+    const tarifsMap = {
+      'RETOUCHE': couturierProfile.tarifs?.retouche || 5000,
+      'CREATION_SUR_MESURE': couturierProfile.tarifs?.creation_sur_mesure || 25000,
+      'CONFECTION': couturierProfile.tarifs?.confection || 15000,
+      'AUTRE': 10000
+    };
+    estimation_tarif = tarifsMap[service_type];
+    
+    // Livraison par défaut
+    const cout_livraison = 1500;
+
     const newOrder = await Order.create({
       client_id,
-      couturier_id,
+      couturier_id: couturierProfile.user_id._id, // ✅ FIX: Utilise User._id correct
       service_type,
-      date,
-      start_time,
-      end_time,
+      date_rendez_vous,
+      heure_rendez_vous,
+      date_limite,
+      heure_limite,
       notes: notes || null,
       measurements: measurements || {},
       status: 'PLANNED',
+      prix_estime: {
+        tarif_service: estimation_tarif,
+        cout_livraison: 0, // Sera mis à jour
+        total: estimation_tarif
+      },
       livraison: {
         mode: 'RETRAIT_ATELIER',
         statut_livraison: 'EN_ATTENTE'
       }
     });
-    await createConversation(
-  newOrder._id,
-  client_id,
-  couturier_id,
-  `Commande #${newOrder._id.toString().slice(-6)} - ${service_type}`
-);
 
+    // ✅ CRÉER CONVERSATION
+    await createConversation(
+      newOrder._id,
+      client_id,
+      couturierProfile.user_id._id,
+      `Commande #${newOrder._id.toString().slice(-6)} - ${service_type}`
+    );
+
+    // ✅ POPULATE POUR EMAIL
     const populatedOrder = await Order.findById(newOrder._id)
-      .populate('client_id', 'name email')
-      .populate('couturier_id', 'name email');
+      .populate('client_id', 'name email telephone')
+      .populate('couturier_id', 'name email telephone');
+
+    // ✅ NOTIFICATION EMAIL COUTURIER
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER || '"TailleurConnect" <no-reply@tailleurconnect.com>',
+        to: couturierProfile.user_id.email,
+        subject: `🧵 Nouvelle commande #${newOrder._id.toString().slice(-6)}`,
+        html: `
+          <h2>Nouvelle commande reçue !</h2>
+          <p><strong>Client:</strong> ${populatedOrder.client_id?.name || 'Nouveau client'}</p>
+          <p><strong>Service:</strong> ${service_type}</p>
+          <p><strong>RDV:</strong> ${date_rendez_vous} à ${heure_rendez_vous}</p>
+          <p><strong>Prix estimé:</strong> ${estimation_tarif.toLocaleString()} FCFA</p>
+          <a href="http://localhost:3000/dashboard/couturier/commandes" style="background:#2D6A4F;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;display:inline-block;">Voir la commande</a>
+        `
+      });
+      console.log(`✅ Email envoyé à ${couturierProfile.user_id.email}`);
+    } catch (emailError) {
+      console.warn('⚠️ Échec envoi email (non-bloquant):', emailError.message);
+    }
 
     return res.status(201).json({
-      message: 'Commande créée avec succès !',
-      order: populatedOrder
+      message: 'Commande créée avec succès ! Notification envoyée au couturier.',
+      order: populatedOrder,
+      estimation: {
+        tarif_service: estimation_tarif,
+        cout_livraison: 0,
+        total: estimation_tarif
+      }
     });
-
   } catch (error) {
     console.error('Create order error:', error);
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
@@ -90,11 +176,7 @@ const createOrder = async (req, res) => {
 };
 
 
-// GET /orders → voir ses commandes
-const getOrders = async (req, res) => {
-  try {
-    const userId = req.user.sub;
-    const userRole = req.user.role;
+
 
     let query = {};
     
@@ -114,6 +196,7 @@ const getOrders = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };
+
 
 // GET /orders/:id → détail d'une commande
 const getOrderById = async (req, res) => {
@@ -204,7 +287,7 @@ const updateOrder = async (req, res) => {
       });
     }
 
-    const allowedUpdates = ['date', 'start_time', 'end_time', 'notes', 'measurements'];
+    const allowedUpdates = ['date_rendez_vous', 'heure_rendez_vous', 'date_limite', 'heure_limite', 'notes', 'measurements'];
     allowedUpdates.forEach(field => {
       if (updates[field] !== undefined) {
         order[field] = updates[field];
@@ -391,5 +474,18 @@ module.exports = {
   cancelOrder,
   setDeliveryMode,
   updateDeliveryStatus,
-  getDeliveryDetails
+  getDeliveryDetails,
+  // ✅ NOUVEAU
+  getUnreadOrders: async (req, res) => {
+    try {
+      const userId = req.user.sub;
+      const orders = await Order.find({ 
+        couturier_id: userId, 
+        status: 'PLANNED' 
+      }).countDocuments();
+      res.json({ unread: orders });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
 };

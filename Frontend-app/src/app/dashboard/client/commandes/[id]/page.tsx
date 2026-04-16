@@ -121,7 +121,7 @@ export default function ClientCommandeDetailsPage() {
             <Badge status={getStatutDisplay(commande.status)} />
           </div>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
-            <Clock size={14} /> Passee le {formatDate(commande.date)}
+            <Clock size={14} /> Passee le {formatDate(commande.date_rendez_vous)}
           </p>
         </div>
       </div>
@@ -138,8 +138,12 @@ export default function ClientCommandeDetailsPage() {
                 <span className="font-medium text-gray-900">{getServiceLabel(commande.service_type)}</span>
               </div>
               <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Horaire</span>
-                <span className="font-medium text-gray-900">{commande.start_time} - {commande.end_time}</span>
+                <span className="text-gray-600">Rendez-vous</span>
+                <span className="font-medium text-gray-900">{formatDate(commande.date_rendez_vous)} à {commande.heure_rendez_vous}</span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-gray-100">
+                <span className="text-gray-600">Date limite</span>
+                <span className="font-medium text-gray-900">{formatDate(commande.date_limite)} à {commande.heure_limite}</span>
               </div>
               <div className="pt-2">
                 <span className="text-gray-600 block mb-1">Notes</span>

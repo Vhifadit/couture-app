@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, Star, Eye, Package, MessageSquare } from "lucide-react";
 import { CouturierProfile } from "@/lib/api";
+import { couturierApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 const fonctionnalites = [
@@ -20,10 +21,15 @@ function CouturiersSection() {
   const [couturiers, setCouturiers] = useState<CouturierProfile[]>([]);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/couturiers/top?limit=3')
-      .then(res => res.json())
-      .then(data => setCouturiers(data.couturiers || []))
-      .catch(console.error);
+    const loadTopCouturiers = async () => {
+      try {
+        const response = await couturierApi.getTop(3);
+        setCouturiers(response.couturiers || []);
+      } catch (error) {
+        console.error("Erreur chargement couturiers:", error);
+      }
+    };
+    loadTopCouturiers();
   }, []);
 
   return (

@@ -198,6 +198,27 @@ const setAvailability = async (req, res) => {
   }
 };
 
+// ✅ NOUVEAU: Obtenir tarifs d'un couturier (pour formulaire commande)
+const getTarifsById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const couturier = await Couturier.findById(id).select('tarifs nom_marque services');
+    
+    if (!couturier) {
+      return res.status(404).json({ message: 'Couturier non trouvé' });
+    }
+    
+    res.json({ 
+      couturier: couturier.nom_marque,
+      tarifs: couturier.tarifs || {},
+      services: couturier.services || []
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
 // Obtenir un couturier par ID (existant)
 const getCouturierById = async (req, res) => {
   try {

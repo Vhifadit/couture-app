@@ -170,9 +170,10 @@ export interface Order {
     email: string;
   };
   service_type: string;
-  date: string;
-  start_time: string;
-  end_time: string;
+  date_rendez_vous: string;
+  heure_rendez_vous: string;
+  date_limite: string;
+  heure_limite: string;
   status: string;
   livraison?: Livraison;
   notes?: string;
@@ -378,9 +379,10 @@ export const orderApi = {
   create: async (orderData: {
     couturier_id: string;
     service_type: string;
-    date: string;
-    start_time: string;
-    end_time: string;
+    date_rendez_vous: string;
+    heure_rendez_vous: string;
+    date_limite: string;
+    heure_limite: string;
     notes?: string;
     measurements?: Measurements;
     livraison?: {
@@ -466,6 +468,22 @@ export const couturierApi = {
   // Obtenir un couturier par ID
   getById: async (id: string) => {
     const response = await apiClient.get<{ couturier: CouturierProfile }>(`/couturiers/${id}`);
+    return response.data;
+  },
+  
+  // ✅ NOUVEAU: Obtenir tarifs couturier (pour formulaire commande)
+  getTarifs: async (id: string) => {
+    const response = await apiClient.get<{
+      couturier: string;
+      tarifs: Record<string, number>;
+      services: string[];
+    }>(`/couturiers/${id}/tarifs`);
+    return response.data;
+  },
+
+  // Compteur commandes en attente
+  getUnreadOrders: async () => {
+    const response = await apiClient.get<{ unread: number }>('/orders/unread');
     return response.data;
   },
   
