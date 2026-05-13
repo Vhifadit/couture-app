@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User, Lock, Save, Loader2, Plus, X, LogOut, AlertCircle, CheckCircle } from 'lucide-react';
-import { clientApi, Address, Measurements, authApi, ClientProfile } from '@/lib/api';
+import { User, Mail, Lock, Loader2, LogOut, AlertCircle, CheckCircle, Phone, Trash2 } from 'lucide-react';
+import { clientApi, authApi, ClientProfile } from '@/lib/api';
+import { normalizePhotoUrl } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -17,26 +18,19 @@ export default function SettingsPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   
   // Client profile data
-  const [clientProfile] = useState<ClientProfile | null>(null);
+  const [clientProfile, setClientProfile] = useState<ClientProfile | null>(null);
   
   // Name editing
   const [name, setName] = useState(user?.name || "");
   const [isEditingName, setIsEditingName] = useState(false);
   
-  // Profile data
-  const [telephone, setTelephone] = useState("");
-  const [adresses, setAdresses] = useState<Address[]>([]);
-  const [measurements, setMeasurements] = useState<Measurements>({});
+  // Email editing
+  const [email, setEmail] = useState(user?.email || "");
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
   
-  // New address form
-  const [showNewAddress, setShowNewAddress] = useState(false);
-  const [newAddress, setNewAddress] = useState<Partial<Address>>({
-    nom: "",
-    rue: "",
-    quartier: "",
-    ville: "",
-    est_principale: false,
-  });
+  // Phone editing
+  const [telephone, setTelephone] = useState("");
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
 
   // Security tab states
   const [currentPassword, setCurrentPassword] = useState('');
@@ -64,20 +58,14 @@ export default function SettingsPage() {
     const fetchProfile = async () => {
       setIsLoading(true);
       try {
-        const [profileRes, measurementsRes] = await Promise.all([
-          clientApi.getMyProfile().catch(() => ({ client: null })),
-          clientApi.getMeasurements().catch(() => ({ mesures: {} }))
-        ]);
+        const profileRes = await clientApi.getMyProfile().catch(() => ({ client: null }));
         
         if (profileRes.client) {
+          setClientProfile(profileRes.client);
           setTelephone(profileRes.client.telephone || "");
-          setAdresses(profileRes.client.adresses || []);
-        }
-        if (measurementsRes.mesures) {
-          setMeasurements(measurementsRes.mesures);
         }
       } catch {
-        console.error("Erreur lors du chargement du profil:");
+        console.error("Erreur lors du chargement du profil");
       } finally {
         setIsLoading(false);
       }
@@ -86,73 +74,12 @@ export default function SettingsPage() {
     fetchProfile();
   }, []);
 
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setError("");
-    setSuccess("");
-    
-    try {
-      await clientApi.updateProfile({ telephone });
-      setSuccess("Profil mis a jour avec succes");
-    } catch {
-      setError("Erreur lors de la mise a jour du profil");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSaveMeasurements = async () => {
-    setIsSaving(true);
-    setError("");
-    setSuccess("");
-    
-    try {
-      await clientApi.updateMeasurements(measurements);
-      setSuccess("Mesures mises a jour avec succes");
-    } catch {
-      setError("Erreur lors de la mise a jour des mesures");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleAddAddress = async () => {
-    if (!newAddress.nom || !newAddress.rue || !newAddress.ville) {
-      setError("Veuillez remplir tous les champs obligatoires");
-      return;
-    }
-    
-    setIsSaving(true);
-    setError("");
-    
-    try {
-      await clientApi.addAddress(newAddress as Omit<Address, '_id'>);
-      const profileRes = await clientApi.getMyProfile();
-      setAdresses(profileRes.client?.adresses || []);
-      setShowNewAddress(false);
-      setNewAddress({ nom: "", rue: "", quartier: "", ville: "", est_principale: false });
-      setSuccess("Adresse ajoutee avec succes");
-    } catch {
-      setError("Erreur lors de l'ajout de l'adresse");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDeleteAddress = async (addressId: string) => {
-    try {
-      await clientApi.removeAddress(addressId);
-      const profileRes = await clientApi.getMyProfile();
-      setAdresses(profileRes.client?.adresses || []);
-    } catch {
-      setError("Erreur lors de la suppression de l'adresse");
-    }
-  };
-
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Reset input
+    e.target.value = '';
 
     setIsSaving(true);
     setError("");
@@ -162,11 +89,44 @@ export default function SettingsPage() {
       const formData = new FormData();
       formData.append('photo', file);
 
-      // This would typically call an API to upload the photo
-      // For now, we'll just show a success message since the API might not exist
+      await authApi.uploadPhoto(formData);
+      
+      // Refetch full profile to get updated data
+
+      const profileRes = await clientApi.getMyProfile();
+      setClientProfile(profileRes.client);
+      
       setSuccess("Photo mise à jour avec succès");
-    } catch {
-      setError("Erreur lors de la mise à jour de la photo");
+    } catch (error: unknown) {
+      console.error('Photo upload error:', error);
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      const message = errorObj.response?.data?.message || 'Erreur lors de la mise à jour de la photo';
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePhotoDelete = async () => {
+    if (!confirm("Voulez-vous vraiment supprimer votre photo de profil ?")) return;
+
+    setIsSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await authApi.deletePhoto();
+      
+      const profileRes = await clientApi.getMyProfile();
+      setClientProfile(profileRes.client);
+      
+      setSuccess("Photo supprimée avec succès");
+      window.dispatchEvent(new CustomEvent('profileUpdate'));
+    } catch (error: unknown) {
+      console.error('Photo delete error:', error);
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      const message = errorObj.response?.data?.message || 'Erreur lors de la suppression de la photo';
+      setError(message);
     } finally {
       setIsSaving(false);
     }
@@ -178,11 +138,55 @@ export default function SettingsPage() {
     setSuccess("");
 
     try {
-      // This would typically call an API to update the name
+      await authApi.updateProfile({ name });
       setSuccess("Nom mis à jour avec succès");
       setIsEditingName(false);
+    } catch (error: unknown) {
+      console.error('Name update error:', error);
+      const errorObj = error as { response?: { data?: { message?: string } } };
+      const message = errorObj.response?.data?.message || 'Erreur lors de la mise à jour du nom';
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEmailUpdate = async () => {
+    setIsSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await authApi.updateProfile({ email });
+      setSuccess("Email mis à jour avec succès");
+      setIsEditingEmail(false);
     } catch {
-      setError("Erreur lors de la mise à jour du nom");
+      setError("Erreur lors de la mise à jour de l'email");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePhoneUpdate = async () => {
+    const normalizedPhone = telephone.replace(/\s/g, '');
+    if (!normalizedPhone.match(/^01\d{8}$/)) {
+      setError("Format invalide : le numero doit commencer par 01 et contenir 10 chiffres");
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await clientApi.updateProfile({ telephone: normalizedPhone });
+      setSuccess("Téléphone mis à jour avec succès");
+      setIsEditingPhone(false);
+      setTelephone(normalizedPhone);
+      setClientProfile((prev) => prev ? { ...prev, telephone: normalizedPhone } : prev);
+    } catch (err: unknown) {
+      console.error("Phone update error:", err);
+      setError("Erreur lors de la mise à jour du téléphone");
     } finally {
       setIsSaving(false);
     }
@@ -237,70 +241,65 @@ export default function SettingsPage() {
 
   return (
     <>
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-[#2D6A4F] mb-6">Parametres du compte</h1>
+      <div className="flex flex-col gap-10">
+        {/* Header Premium */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <h1 className="text-4xl font-black text-[#2D6A4F] tracking-tight">
+              Réglages
+            </h1>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-8 h-1 bg-[#2D6A4F] rounded-full"></span>
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">
+                Gérez vos informations personnelles
+              </p>
+            </div>
+          </div>
+        </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
+          <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <AlertCircle size={16} />
             {error}
           </div>
         )}
         {success && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-600 text-sm">
+          <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <CheckCircle size={16} />
             {success}
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="w-full md:w-64 shrink-0">
-            <div className="bg-white rounded-xl border border-[#C9B99A] overflow-hidden">
+        <div className="flex flex-col lg:flex-row gap-10">
+          {/* Navigation Sidebar Premium */}
+          <div className="w-full lg:w-72 shrink-0">
+            <div className="bg-white rounded-[2rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] p-3 flex flex-col gap-2">
               <button
                 onClick={() => setActiveTab('profile')}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
                   activeTab === 'profile'
-                    ? 'bg-[#F5EFE6] text-[#2D6A4F] border-l-4 border-[#2D6A4F]'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-[#2D6A4F]'
+                    ? 'bg-[#2D6A4F] text-white shadow-xl shadow-[#2D6A4F]/20 translate-x-1'
+                    : 'text-gray-400 hover:bg-[#F5EFE6] hover:text-[#2D6A4F]'
                 }`}
               >
                 <User size={18} />
                 Mon Profil
               </button>
               <button
-                onClick={() => setActiveTab('measurements')}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'measurements'
-                    ? 'bg-[#F5EFE6] text-[#2D6A4F] border-l-4 border-[#2D6A4F]'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-[#2D6A4F]'
-                }`}
-              >
-                <User size={18} />
-                Mes Mesures
-              </button>
-              <button
-                onClick={() => setActiveTab('addresses')}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'addresses'
-                    ? 'bg-[#F5EFE6] text-[#2D6A4F] border-l-4 border-[#2D6A4F]'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-[#2D6A4F]'
-                }`}
-              >
-                <User size={18} />
-                Adresses
-              </button>
-              <button
                 onClick={() => setActiveTab('security')}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
                   activeTab === 'security'
-                    ? 'bg-[#F5EFE6] text-[#2D6A4F] border-l-4 border-[#2D6A4F]'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-[#2D6A4F]'
+                    ? 'bg-[#2D6A4F] text-white shadow-xl shadow-[#2D6A4F]/20 translate-x-1'
+                    : 'text-gray-400 hover:bg-[#F5EFE6] hover:text-[#2D6A4F]'
                 }`}
               >
                 <Lock size={18} />
                 Sécurité
               </button>
+              <div className="h-px bg-gray-50 mx-4 my-2"></div>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 transition-colors"
+                className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-50 hover:text-red-600 transition-all duration-300"
               >
                 <LogOut size={18} />
                 Déconnexion
@@ -310,372 +309,236 @@ export default function SettingsPage() {
 
           <div className="flex-1">
             {isLoading ? (
-              <div className="flex items-center justify-center p-10">
-                <Loader2 className="h-8 w-8 animate-spin text-[#2D6A4F]" />
+              <div className="flex items-center justify-center p-20 bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)]">
+                <Loader2 className="h-10 w-10 animate-spin text-[#2D6A4F]" />
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-[#C9B99A] p-6">
+              <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_30px_70px_rgba(0,0,0,0.03)] p-10">
                 {activeTab === 'profile' && (
-                  <form onSubmit={handleSaveProfile} className="space-y-4">
-                    <h2 className="text-lg font-semibold text-[#2D6A4F] mb-4">Informations personnelles</h2>
+                  <div className="space-y-10 animate-in fade-in duration-500">
+                    <div>
+                      <h2 className="text-xl font-black text-[#2D6A4F] tracking-tight">Informations personnelles</h2>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Éditez votre identité publique</p>
+                    </div>
                     
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="w-20 h-20 rounded-full bg-[#A08060] flex items-center justify-center text-white text-3xl font-bold overflow-hidden">
-                        {clientProfile?.photo ? (
-                          <img src={clientProfile.photo} alt="Photo de profil" className="w-full h-full object-cover" />
-                        ) : (
-                          user?.name?.[0] || "U"
-                        )}
-                      </div>
-                      <div>
-                        <label htmlFor="photo-upload" className="cursor-pointer text-sm text-[#2D6A4F] font-medium hover:underline block">
-                          Changer la photo
-                        </label>
-                        <input
-                          id="photo-upload"
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handlePhotoChange}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nom complet</label>
-                      <input
-                        id="name"
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        disabled={!isEditingName}
-                        className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                      />
-                      {!isEditingName ? (
-                        <button type="button" onClick={() => setIsEditingName(true)} className="text-sm text-[#2D6A4F] mt-1 hover:underline">
-                          Modifier
-                        </button>
-                      ) : (
-                        <div className="flex gap-2 mt-1">
-                          <button type="button" onClick={handleNameUpdate} className="text-sm text-[#2D6A4F] font-medium">
-                            Enregistrer
-                          </button>
-                          <button type="button" onClick={() => { setIsEditingName(false); setName(user?.name || ""); }} className="text-sm text-gray-500">
-                            Annuler
-                          </button>
+                    <div className="flex flex-col md:flex-row items-center gap-8 p-8 bg-gray-50/50 rounded-[2rem] border border-gray-100">
+                      <div className="relative group">
+                        <div className="w-32 h-32 rounded-[2.5rem] bg-[#2D6A4F] flex items-center justify-center text-white text-4xl font-black overflow-hidden shadow-2xl group-hover:scale-105 transition-transform duration-500">
+                          {clientProfile?.photo ? (
+                            <img src={normalizePhotoUrl(clientProfile.photo)} alt="Photo de profil" className="w-full h-full object-cover" />
+                          ) : (
+                            user?.name?.[0]?.toUpperCase() || "U"
+                          )}
                         </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                      <input
-                        id="email"
-                        type="email"
-                        value={user?.email || ""}
-                        disabled
-                        className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-gray-50 text-gray-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">Telephone</label>
-                      <input
-                        id="phone"
-                        type="tel"
-                        value={telephone}
-                        onChange={(e) => setTelephone(e.target.value)}
-                        placeholder="+229 97 00 00 00"
-                        className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                      />
-                    </div>
-
-                    <div className="pt-4 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={isSaving}
-                        className="flex items-center gap-2 px-6 py-2 bg-[#2D6A4F] text-white rounded-md font-medium hover:bg-[#1B4332] transition-colors disabled:opacity-70"
-                      >
-                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save size={18} />}
-                        {isSaving ? 'Enregistrement...' : 'Enregistrer'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {activeTab === 'measurements' && (
-                  <div className="space-y-4">
-                    <h2 className="text-lg font-semibold text-[#2D6A4F] mb-4">Mes Mesures</h2>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      <div>
-                        <label htmlFor="tour_poitrine" className="block text-sm font-medium text-gray-700 mb-1">Tour de poitrine (cm)</label>
-                        <input
-                          id="tour_poitrine"
-                          type="number"
-                          placeholder="Ex: 90"
-                          value={measurements.tour_poitrine || ""}
-                          onChange={(e) => setMeasurements({...measurements, tour_poitrine: Number(e.target.value)})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="tour_taille" className="block text-sm font-medium text-gray-700 mb-1">Tour de taille (cm)</label>
-                        <input
-                          id="tour_taille"
-                          type="number"
-                          placeholder="Ex: 75"
-                          value={measurements.tour_taille || ""}
-                          onChange={(e) => setMeasurements({...measurements, tour_taille: Number(e.target.value)})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="tour_hanches" className="block text-sm font-medium text-gray-700 mb-1">Tour de hanches (cm)</label>
-                        <input
-                          id="tour_hanches"
-                          type="number"
-                          placeholder="Ex: 95"
-                          value={measurements.tour_hanches || ""}
-                          onChange={(e) => setMeasurements({...measurements, tour_hanches: Number(e.target.value)})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="longueur_bras" className="block text-sm font-medium text-gray-700 mb-1">Longueur des bras (cm)</label>
-                        <input
-                          id="longueur_bras"
-                          type="number"
-                          placeholder="Ex: 55"
-                          value={measurements.longueur_bras || ""}
-                          onChange={(e) => setMeasurements({...measurements, longueur_bras: Number(e.target.value)})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="longueur_jambe" className="block text-sm font-medium text-gray-700 mb-1">Longueur des jambes (cm)</label>
-                        <input
-                          id="longueur_jambe"
-                          type="number"
-                          placeholder="Ex: 100"
-                          value={measurements.longueur_jambe || ""}
-                          onChange={(e) => setMeasurements({...measurements, longueur_jambe: Number(e.target.value)})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="taille_totale" className="block text-sm font-medium text-gray-700 mb-1">Taille totale (cm)</label>
-                        <input
-                          id="taille_totale"
-                          type="number"
-                          placeholder="Ex: 170"
-                          value={measurements.taille_totale || ""}
-                          onChange={(e) => setMeasurements({...measurements, taille_totale: Number(e.target.value)})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 flex justify-end">
-                      <button
-                        onClick={handleSaveMeasurements}
-                        disabled={isSaving}
-                        className="flex items-center gap-2 px-6 py-2 bg-[#2D6A4F] text-white rounded-md font-medium hover:bg-[#1B4332] transition-colors disabled:opacity-70"
-                      >
-                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save size={18} />}
-                        {isSaving ? 'Enregistrement...' : 'Enregistrer'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'addresses' && (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-lg font-semibold text-[#2D6A4F]">Mes Adresses</h2>
-                      <button
-                        onClick={() => setShowNewAddress(!showNewAddress)}
-                        className="flex items-center gap-1 text-sm text-[#2D6A4F] font-medium"
-                      >
-                        <Plus size={16} /> Ajouter
-                      </button>
-                    </div>
-
-                    {showNewAddress && (
-                      <div className="p-4 bg-gray-50 rounded-lg space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <input
-                            type="text"
-                            placeholder="Nom (ex: Maison, Bureau)"
-                            value={newAddress.nom || ""}
-                            onChange={(e) => setNewAddress({...newAddress, nom: e.target.value})}
-                            className="px-3 py-2 rounded-md border border-[#C9B99A]"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Ville *"
-                            value={newAddress.ville || ""}
-                            onChange={(e) => setNewAddress({...newAddress, ville: e.target.value})}
-                            className="px-3 py-2 rounded-md border border-[#C9B99A]"
-                          />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-[2.5rem] backdrop-blur-sm pointer-events-none">
+                           <User size={24} className="text-white animate-bounce" />
                         </div>
-                        <input
-                          type="text"
-                          placeholder="Rue *"
-                          value={newAddress.rue || ""}
-                          onChange={(e) => setNewAddress({...newAddress, rue: e.target.value})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A]"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Quartier"
-                          value={newAddress.quartier || ""}
-                          onChange={(e) => setNewAddress({...newAddress, quartier: e.target.value})}
-                          className="w-full px-3 py-2 rounded-md border border-[#C9B99A]"
-                        />
-                        <label className="flex items-center gap-2">
+                      </div>
+                      
+                      <div className="flex flex-col gap-4 items-center md:items-start">
+                        <div className="flex gap-3">
                           <input
-                            type="checkbox"
-                            checked={newAddress.est_principale || false}
-                            onChange={(e) => setNewAddress({...newAddress, est_principale: e.target.checked})}
+                            id="photo-upload"
+                            type="file"
+                            accept="image/*"
+                            className="sr-only"
+                            onChange={handlePhotoChange}
                           />
-                          <span className="text-sm">Adresse principale</span>
-                        </label>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleAddAddress}
-                            disabled={isSaving}
-                            className="px-4 py-2 bg-[#2D6A4F] text-white rounded-md text-sm font-medium disabled:opacity-70"
+                          <label
+                            htmlFor="photo-upload"
+                            className="px-8 py-3 bg-[#2D6A4F] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#1B4332] cursor-pointer shadow-xl shadow-[#2D6A4F]/20 transition-all active:scale-95"
                           >
-                            {isSaving ? "Ajout..." : "Ajouter"}
-                          </button>
-                          <button
-                            onClick={() => setShowNewAddress(false)}
-                            className="px-4 py-2 border border-[#C9B99A] rounded-md text-sm"
-                          >
-                            Annuler
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {adresses.length === 0 && !showNewAddress ? (
-                      <p className="text-gray-500 text-center py-4">Aucune adresse enregistree</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {adresses.map((addr, index) => (
-                          <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                            <div>
-                              <p className="font-medium">{addr.nom}</p>
-                              <p className="text-sm text-gray-500">{addr.rue}, {addr.ville}</p>
-                              {addr.est_principale && (
-                                <span className="text-xs text-[#2D6A4F]">Principale</span>
-                              )}
-                            </div>
+                            Changer la photo
+                          </label>
+                          {clientProfile?.photo && (
                             <button
-                              onClick={() => handleDeleteAddress(addr._id || "")}
-                              className="text-red-500 hover:text-red-700"
-                              aria-label={`Supprimer l'adresse ${addr.nom}`}
+                              type="button"
+                              onClick={handlePhotoDelete}
+                              disabled={isSaving}
+                              className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-50"
                             >
-                              <X size={18} />
+                              <Trash2 size={18} />
                             </button>
-                          </div>
-                        ))}
+                          )}
+                        </div>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">JPG, PNG ou GIF. Max 5MB.</p>
                       </div>
-                    )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                        <label htmlFor="name" className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Nom complet</label>
+                        <div className="relative group">
+                          <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#2D6A4F] transition-colors" />
+                          <input
+                            id="name"
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            disabled={!isEditingName}
+                            className="w-full pl-12 pr-28 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all disabled:opacity-50"
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl bg-gray-50/95 px-2 py-1">
+                            {!isEditingName ? (
+                              <button type="button" onClick={() => setIsEditingName(true)} className="text-[9px] font-black uppercase text-[#2D6A4F] hover:underline">
+                                Modifier
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button type="button" onClick={handleNameUpdate} disabled={isSaving} className="text-[9px] font-black uppercase text-[#2D6A4F] hover:underline">
+                                  OK
+                                </button>
+                                <button type="button" onClick={() => { setIsEditingName(false); setName(user?.name || ""); }} className="text-[9px] font-black uppercase text-gray-400 hover:underline">
+                                  X
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <label htmlFor="email" className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Email de contact</label>
+                        <div className="relative group">
+                          <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#2D6A4F] transition-colors" />
+                          <input
+                            id="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            disabled={!isEditingEmail}
+                            className="w-full pl-12 pr-28 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all disabled:opacity-50"
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl bg-gray-50/95 px-2 py-1">
+                            {!isEditingEmail ? (
+                              <button type="button" onClick={() => setIsEditingEmail(true)} className="text-[9px] font-black uppercase text-[#2D6A4F] hover:underline">
+                                Modifier
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button type="button" onClick={handleEmailUpdate} disabled={isSaving} className="text-[9px] font-black uppercase text-[#2D6A4F] hover:underline">
+                                  OK
+                                </button>
+                                <button type="button" onClick={() => { setIsEditingEmail(false); setEmail(user?.email || ""); }} className="text-[9px] font-black uppercase text-gray-400 hover:underline">
+                                  X
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <label htmlFor="phone" className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Téléphone (Bénin)</label>
+                        <div className="relative group">
+                          <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#2D6A4F] transition-colors" />
+                          <input
+                            id="phone"
+                            type="tel"
+                            value={telephone}
+                            onChange={(e) => setTelephone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                            disabled={!isEditingPhone}
+                            placeholder="01XXXXXXXX"
+                            inputMode="numeric"
+                            maxLength={10}
+                            className="w-full pl-12 pr-28 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all disabled:opacity-50"
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl bg-gray-50/95 px-2 py-1">
+                            {!isEditingPhone ? (
+                              <button type="button" onClick={() => setIsEditingPhone(true)} className="text-[9px] font-black uppercase text-[#2D6A4F] hover:underline">
+                                Modifier
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button type="button" onClick={handlePhoneUpdate} disabled={isSaving} className="text-[9px] font-black uppercase text-[#2D6A4F] hover:underline">
+                                  OK
+                                </button>
+                                <button type="button" onClick={() => { setIsEditingPhone(false); setTelephone(clientProfile?.telephone || ""); }} className="text-[9px] font-black uppercase text-gray-400 hover:underline">
+                                  X
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
                 {activeTab === 'security' && (
-                  <div className="space-y-4">
-                    <h2 className="text-lg font-semibold text-[#2D6A4F] mb-4">Sécurité</h2>
-                    <p className="text-gray-600 mb-6">Gérez vos paramètres de sécurité ici.</p>
+                  <div className="space-y-10 animate-in fade-in duration-500">
+                    <div>
+                      <h2 className="text-xl font-black text-[#2D6A4F] tracking-tight">Sécurité</h2>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Protégez votre compte</p>
+                    </div>
 
                     {securityError && (
-                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm flex items-center gap-2">
+                      <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3">
                         <AlertCircle size={16} />
                         {securityError}
                       </div>
                     )}
                     {securitySuccess && (
-                      <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-600 text-sm flex items-center gap-2">
+                      <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3">
                         <CheckCircle size={16} />
                         {securitySuccess}
                       </div>
                     )}
 
-                    <form onSubmit={handleSecuritySubmit} className="space-y-4 max-w-md">
-                      <div>
-                        <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                          Mot de passe actuel
-                        </label>
-                        <div className="relative">
-                          <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <form onSubmit={handleSecuritySubmit} className="space-y-8 max-w-md">
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Mot de passe actuel</label>
+                        <div className="relative group">
+                          <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#2D6A4F] transition-colors" />
                           <input
-                            id="currentPassword"
                             type="password"
                             value={currentPassword}
                             onChange={(e) => setCurrentPassword(e.target.value)}
-                            className="w-full pl-10 pr-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                            placeholder="Entrez votre mot de passe actuel"
+                            className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                            placeholder="••••••••"
                           />
                         </div>
                       </div>
 
-                      <div>
-                        <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                          Nouveau mot de passe
-                        </label>
-                        <div className="relative">
-                          <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Nouveau mot de passe</label>
+                        <div className="relative group">
+                          <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#2D6A4F] transition-colors" />
                           <input
-                            id="newPassword"
                             type="password"
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
-                            className="w-full pl-10 pr-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                            placeholder="Entrez votre nouveau mot de passe"
+                            className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                            placeholder="Min. 6 caractères"
                           />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">Minimum 6 caractères</p>
                       </div>
 
-                      <div>
-                        <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                          Confirmer le mot de passe
-                        </label>
-                        <div className="relative">
-                          <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Confirmer le mot de passe</label>
+                        <div className="relative group">
+                          <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#2D6A4F] transition-colors" />
                           <input
-                            id="confirmPassword"
                             type="password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="w-full pl-10 pr-3 py-2 rounded-md border border-[#C9B99A] focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-                            placeholder="Confirmez votre nouveau mot de passe"
+                            className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                            placeholder="Confirmez à nouveau"
                           />
                         </div>
                       </div>
 
-                      <div className="pt-4">
-                        <button
-                          type="submit"
-                          disabled={isSecurityLoading}
-                          className="flex items-center gap-2 px-6 py-2 bg-[#2D6A4F] text-white rounded-md font-medium hover:bg-[#1B4332] transition-colors disabled:opacity-70"
-                        >
-                          {isSecurityLoading ? (
-                            <>
-                              <Loader2 size={18} className="animate-spin" />
-                              mise à jour...
-                            </>
-                          ) : (
-                            <>
-                              <Lock size={18} />
-                              Mettre à jour le mot de passe
-                            </>
-                          )}
-                        </button>
-                      </div>
+                      <button
+                        type="submit"
+                        disabled={isSecurityLoading}
+                        className="w-full py-4 bg-[#2D6A4F] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-[#2D6A4F]/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
+                      >
+                        {isSecurityLoading ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <Loader2 size={16} className="animate-spin" /> Mise à jour...
+                          </div>
+                        ) : "Mettre à jour le mot de passe"}
+                      </button>
                     </form>
                   </div>
                 )}
@@ -686,26 +549,19 @@ export default function SettingsPage() {
       </div>
 
       {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Déconnexion
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Êtes-vous sur de vouloir vous déconnecter ?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={cancelLogout}
-                className="px-4 py-2 rounded-md text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200"
-              >
-                Non
-              </button>
-              <button
-                onClick={confirmLogout}
-                className="px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700"
-              >
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300 text-center">
+            <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <LogOut size={32} className="text-red-500" />
+            </div>
+            <h3 className="text-xl font-black text-gray-900 mb-2 tracking-tight">Déconnexion</h3>
+            <p className="text-sm text-gray-500 mb-8 font-medium">Êtes-vous sûr de vouloir quitter votre session ?</p>
+            <div className="flex gap-3">
+              <button onClick={confirmLogout} className="flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest text-white bg-red-500 hover:bg-red-600 shadow-xl shadow-red-500/20 transition-all active:scale-95">
                 Oui
+              </button>
+              <button onClick={cancelLogout} className="flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-50 hover:bg-gray-100 transition-all">
+                Non
               </button>
             </div>
           </div>
@@ -714,4 +570,3 @@ export default function SettingsPage() {
     </>
   );
 }
-

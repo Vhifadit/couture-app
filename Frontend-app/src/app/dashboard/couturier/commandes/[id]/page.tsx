@@ -17,6 +17,7 @@ export default function CouturierCommandeDetailsPage() {
   const [client, setClient] = useState<ClientProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [estimatedDelivery, setEstimatedDelivery] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,8 +57,12 @@ export default function CouturierCommandeDetailsPage() {
     if (!commande || !id) return;
     
     try {
-      await orderApi.updateStatus(id, newStatus);
-      setCommande({ ...commande, status: newStatus });
+      const response = await orderApi.updateStatus(
+        id,
+        newStatus,
+        newStatus === "CONFIRMED" ? estimatedDelivery || undefined : undefined
+      );
+      setCommande(response.order);
       addToast("Statut mis a jour: " + newStatus, "success");
     } catch (err) {
       console.error("Erreur mise a jour:", err);
@@ -70,6 +75,9 @@ export default function CouturierCommandeDetailsPage() {
       case 'PLANNED': return "En attente";
       case 'CONFIRMED': return "Confirme";
       case 'IN_PROGRESS': return "En cours";
+      case 'READY': return "Pret a recuperer";
+      case 'DELIVERED': return "Livre";
+      case 'LATE': return "En retard";
       case 'COMPLETED': return "Termine";
       case 'CANCELLED': return "Annule";
       default: return status;
@@ -142,6 +150,13 @@ export default function CouturierCommandeDetailsPage() {
         <div className="flex gap-3">
           {commande.status === 'PLANNED' && (
             <>
+              <input
+                type="datetime-local"
+                value={estimatedDelivery}
+                onChange={(e) => setEstimatedDelivery(e.target.value)}
+                className="rounded-md border border-[#C9B99A] px-3 py-2 text-sm"
+                title="Date de livraison estimee"
+              />
               <button 
                 onClick={() => handleStatusChange('CANCELLED')} 
                 className="btn-outline text-red-600 border-red-200 hover:bg-red-50"
@@ -166,10 +181,18 @@ export default function CouturierCommandeDetailsPage() {
           )}
           {commande.status === 'IN_PROGRESS' && (
             <button 
-              onClick={() => handleStatusChange('COMPLETED')} 
+              onClick={() => handleStatusChange('READY')} 
+              className="btn-em flex items-center gap-2 bg-amber-700 hover:bg-amber-800"
+            >
+              <CheckCircle size={16} /> Prete a recuperer
+            </button>
+          )}
+          {commande.status === 'READY' && (
+            <button 
+              onClick={() => handleStatusChange('DELIVERED')} 
               className="btn-em flex items-center gap-2 bg-green-700 hover:bg-green-800"
             >
-              <CheckCircle size={16} /> Marquer comme termine
+              <CheckCircle size={16} /> Marquer comme livree
             </button>
           )}
         </div>
@@ -225,6 +248,12 @@ export default function CouturierCommandeDetailsPage() {
                    commande.livraison?.statut_livraison === 'EN_COURS' ? 'En cours' :
                    commande.livraison?.statut_livraison === 'LIVREE' ? 'Livree' :
                    'Non defini'}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-gray-100">
+                <span className="text-gray-600">Livraison estimee</span>
+                <span className="font-medium text-gray-900">
+                  {formatDate(commande.livraison?.date_livraison_prevue || commande.date_limite)}
                 </span>
               </div>
               

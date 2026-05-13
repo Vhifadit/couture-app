@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, MapPin, Scissors, MessageSquare, Truck, Clock } from "lucide-react";
+import { ArrowLeft, MapPin, Scissors, MessageSquare, Truck, Clock, Star } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import { orderApi, clientApi, Order, CouturierProfile } from "@/lib/api";
 
@@ -15,6 +15,9 @@ export default function ClientCommandeDetailsPage() {
   const [couturier, setCouturier] = useState<CouturierProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reviewNote, setReviewNote] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewMessage, setReviewMessage] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,9 +58,29 @@ export default function ClientCommandeDetailsPage() {
       case 'PLANNED': return "En attente";
       case 'CONFIRMED': return "Confirme";
       case 'IN_PROGRESS': return "En cours";
+      case 'READY': return "Pret a recuperer";
+      case 'DELIVERED': return "Livre";
+      case 'LATE': return "En retard";
       case 'COMPLETED': return "Termine";
       case 'CANCELLED': return "Annule";
       default: return status;
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!id) return;
+    await orderApi.cancelOrder(id);
+    setCommande((current) => current ? { ...current, status: "CANCELLED" } : current);
+  };
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+    try {
+      await orderApi.addReview(id, { note: reviewNote, commentaire: reviewComment });
+      setReviewMessage("Merci, votre avis a ete enregistre.");
+    } catch {
+      setReviewMessage("Impossible d'enregistrer cet avis. Il a peut-etre deja ete envoye.");
     }
   };
 
@@ -125,6 +148,14 @@ export default function ClientCommandeDetailsPage() {
           </p>
         </div>
       </div>
+      {["PLANNED", "MODIFIED"].includes(commande.status) && (
+        <button
+          onClick={handleCancel}
+          className="w-fit rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+        >
+          Annuler la commande
+        </button>
+      )}
 
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
@@ -204,6 +235,35 @@ export default function ClientCommandeDetailsPage() {
           </div>
         </div>
 
+          {["DELIVERED", "COMPLETED"].includes(commande.status) && (
+            <form onSubmit={handleReviewSubmit} className="bg-white p-6 rounded-xl border border-[#C9B99A] shadow-sm md:col-span-2">
+              <h2 className="text-lg font-semibold text-[#2D6A4F] mb-4 flex items-center gap-2">
+                <Star size={20} /> Evaluer le couturier
+              </h2>
+              <div className="flex gap-2 mb-3">
+                {[1, 2, 3, 4, 5].map((note) => (
+                  <button
+                    type="button"
+                    key={note}
+                    onClick={() => setReviewNote(note)}
+                    className={note <= reviewNote ? "text-yellow-500" : "text-gray-300"}
+                    aria-label={`${note} etoile`}
+                  >
+                    <Star size={22} fill="currentColor" />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                className="w-full rounded-md border border-[#C9B99A] p-3 text-sm"
+                rows={3}
+                placeholder="Votre commentaire"
+              />
+              <button className="btn-em mt-3 rounded-md px-4 py-2 text-sm">Envoyer l'avis</button>
+              {reviewMessage && <p className="mt-2 text-sm text-[#2D6A4F]">{reviewMessage}</p>}
+            </form>
+          )}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl border border-[#C9B99A] shadow-sm">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Couturier</h2>

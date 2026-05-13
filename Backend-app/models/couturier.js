@@ -56,6 +56,30 @@ const couturierSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+
+  disponibilite_statut: {
+    type: String,
+    enum: ['DISPONIBLE', 'OCCUPE', 'ABSENT'],
+    default: 'DISPONIBLE'
+  },
+
+  max_commandes_en_cours: {
+    type: Number,
+    default: 5,
+    min: 1
+  },
+
+  validation_status: {
+    type: String,
+    enum: ['EN_ATTENTE', 'VALIDE', 'REFUSE'],
+    default: 'EN_ATTENTE'
+  },
+
+  contacts: {
+    email: String,
+    whatsapp: String,
+    site_web: String
+  },
   
   horaires: {
     lundi: { ouvert: Boolean, debut: String, fin: String },
@@ -100,6 +124,7 @@ const couturierSchema = new mongoose.Schema({
 couturierSchema.index({ localisation: '2dsphere' });
 couturierSchema.index({ 'adresse.ville': 1, 'adresse.quartier': 1 });
 couturierSchema.index({ disponibilite: 1 });
+couturierSchema.index({ disponibilite_statut: 1, validation_status: 1 });
 couturierSchema.index({ 'photos.categorie': 1 }); // Nouveau index
 
 module.exports = mongoose.model('Couturier', couturierSchema);

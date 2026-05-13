@@ -52,6 +52,16 @@ async function seedData() {
   // Hasher le mot de passe
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash('password123', salt);
+
+  // Seed Admin si manquant
+  const adminRole = await Role.findOne({ name: 'admin' });
+  const adminPasswordHash = await bcrypt.hash('Admin@1234!', 10);
+  await User.create({
+    name: 'Amani Admin',
+    email: 'admin@tailleurconnect.bj',
+    passwordHash: adminPasswordHash,
+    role: adminRole._id
+  });
   
   // Créer 3 utilisateurs couturiers
   const couturierUsers = [
@@ -195,4 +205,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-

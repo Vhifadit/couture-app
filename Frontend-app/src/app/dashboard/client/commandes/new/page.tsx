@@ -1,489 +1,502 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
-import { couturierApi, orderApi, CouturierProfile, Address } from '@/lib/api';
-import { ArrowLeft, Image as ImageIcon, CheckCircle, X, Loader2 } from 'lucide-react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Suspense, useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { ArrowLeft, CheckCircle, Image as ImageIcon, Loader2, X, Calendar, Clock, MapPin, Truck, Scissors, Info, AlertCircle } from 'lucide-react';
+import { Address, clientApi, CouturierProfile, couturierApi, orderApi, articleApi } from '@/lib/api';
+import { normalizePhotoUrl } from '@/lib/utils';
 
-// Fonction pour convertir le type de service en format d'affichage
 const getServiceLabel = (service: string): string => {
   switch (service) {
-    case 'RETOUCHE': return "Retouche";
-    case 'CREATION_SUR_MESURE': return "Création sur mesure";
-    case 'CONFECTION': return "Confection";
-    case 'AUTRE': return "Autre";
+    case 'RETOUCHE': return 'Retouche';
+    case 'CREATION_SUR_MESURE': return 'Creation sur mesure';
+    case 'CONFECTION': return 'Confection';
+    case 'AUTRE': return 'Autre';
     default: return service.replace(/_/g, ' ');
   }
 };
 
+type MeasurementsState = Record<string, number | string>;
+
 function NewOrderForm() {
   const searchParams = useSearchParams();
-  const couturierId = searchParams.get('couturierId');
-  
+  const couturierId = searchParams?.get('couturierId');
+
   const [couturier, setCouturier] = useState<CouturierProfile | null>(null);
+  const [clientMesures, setClientMesures] = useState<MeasurementsState>({});
+  const [measurements, setMeasurements] = useState<MeasurementsState>({});
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [serviceType, setServiceType] = useState('');
+  const [dateRendezVous, setDateRendezVous] = useState('');
+  const [heureRendezVous, setHeureRendezVous] = useState('');
+  const [dateLimite, setDateLimite] = useState('');
+  const [heureLimite, setHeureLimite] = useState('');
+  const [notes, setNotes] = useState('');
+  const [livraisonMode, setLivraisonMode] = useState<'RETRAIT_ATELIER' | 'LIVRAISON'>('RETRAIT_ATELIER');
+  const [adresseLivraison, setAdresseLivraison] = useState<Partial<Address>>({
+    nom: 'Livraison',
+    rue: '',
+    quartier: '',
+    ville: '',
+  });
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState('');
 
-
-  
-  // Form state
-  const [serviceType, setServiceType] = useState("");
-  const [dateRendezVous, setDateRendezVous] = useState("");
-  const [heureRendezVous, setHeureRendezVous] = useState("");
-  const [dateLimite, setDateLimite] = useState("");
-  const [heureLimite, setHeureLimite] = useState("");
-  const [notes, setNotes] = useState("");
-  const [livraisonMode, setLivraisonMode] = useState<"RETRAIT_ATELIER" | "LIVRAISON">("RETRAIT_ATELIER");
+  const [prefilledArticle, setPrefilledArticle] = useState<any | null>(null);
 
   useEffect(() => {
-    const fetchCouturier = async () => {
+    const loadPageData = async () => {
       if (!couturierId) {
-        setError("Aucun couturier spécifié");
+        setError('Aucun couturier spécifié');
         setIsLoading(false);
         return;
       }
-      
+
       try {
-        const response = await couturierApi.getById(couturierId);
-        setCouturier(response.couturier);
+        const [couturierResponse, mesuresResponse] = await Promise.all([
+          couturierApi.getById(couturierId),
+          clientApi.getMeasurements().catch(() => ({ mesures: {} })),
+        ]);
+
+        const mesures = (mesuresResponse.mesures || {}) as MeasurementsState;
+        setCouturier(couturierResponse.couturier);
+        setClientMesures(mesures);
+        setMeasurements(mesures);
+
+        const type = searchParams?.get('type');
+        const titre = searchParams?.get('titre');
+        const desc = searchParams?.get('description');
+        const articleId = searchParams?.get('articleId');
+
+        if (type) setServiceType(type);
+        if (titre || desc) {
+          let prefilledNotes = '';
+          if (titre) prefilledNotes += `Modèle sélectionné : ${titre}\n`;
+          if (desc) prefilledNotes += `Notes modèle : ${desc}\n`;
+          setNotes(prefilledNotes);
+        }
+
+        if (articleId) {
+          try {
+             const artRes = await articleApi.getById(articleId);
+             setPrefilledArticle(artRes.article);
+          } catch (e) {
+             console.error("Erreur chargement article pré-rempli:", e);
+          }
+        }
       } catch (err) {
-        console.error("Erreur lors de la récupération du couturier:", err);
-        setError("Impossible de charger les informations du couturier");
+        console.error('Erreur chargement formulaire:', err);
+        setError('Impossible de charger les informations du couturier');
       } finally {
         setIsLoading(false);
       }
     };
-    
-    fetchCouturier();
-  }, [couturierId]);
 
-  // ✅ NOUVEAU: États pour features avancées
-  const [measurements, setMeasurements] = useState({});
-const [adresseLivraison, setAdresseLivraison] = useState<Partial<Address>>({ nom: '', rue: '', quartier: '', ville: '' });
+    loadPageData();
+  }, [couturierId, searchParams]);
 
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-// prixEstime removed - not used
+  const previewUrls = useMemo(
+    () => selectedFiles.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    [selectedFiles]
+  );
 
-  const [clientMesures, setClientMesures] = useState({});
-
-  // ✅ Charger mesures + corriger import clientApi
   useEffect(() => {
-    const loadClientData = async () => {
-      try {
-        // Import dynamique pour éviter erreur circulaire
-        const { clientApi } = await import('@/lib/api');
-        const mesuresRes = await clientApi.getMeasurements();
-        setClientMesures(mesuresRes.mesures || {});
-        setMeasurements(mesuresRes.mesures || {});
-      } catch (err) {
-        console.warn('Mesures non disponibles:', err);
-      }
+    return () => {
+      previewUrls.forEach(({ url }) => URL.revokeObjectURL(url));
     };
-    loadClientData();
-  }, []);
+  }, [previewUrls]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    // Validation dates
+
     const rdv = new Date(`${dateRendezVous}T${heureRendezVous}`);
     const limite = new Date(`${dateLimite}T${heureLimite}`);
+
     if (rdv >= limite) {
-      setError('Date RDV doit être avant date limite');
+      setError('La date de rendez-vous doit être antérieure à la date de livraison souhaitée.');
+      return;
+    }
+
+    if (!couturierId) {
+      setError('Aucun couturier spécifié');
       return;
     }
 
     setIsSubmitting(true);
-    setError("");
-    
+    setError('');
+
     try {
-      // 📸 FormData pour photos
-      const formData = new FormData();
-      formData.append('couturier_id', couturierId!);
-      formData.append('service_type', serviceType);
-      formData.append('date_rendez_vous', dateRendezVous);
-      formData.append('heure_rendez_vous', heureRendezVous);
-      formData.append('date_limite', dateLimite);
-      formData.append('heure_limite', heureLimite);
-      formData.append('notes', notes);
-      formData.append('measurements', JSON.stringify(measurements));
-
-      // 🏠 Adresse si livraison
+      const fd = new FormData();
+      fd.append('couturier_id', couturierId);
+      fd.append('service_type', serviceType);
+      fd.append('date_rendez_vous', dateRendezVous);
+      fd.append('heure_rendez_vous', heureRendezVous);
+      fd.append('date_limite', dateLimite);
+      fd.append('heure_limite', heureLimite);
+      fd.append('notes', notes);
+      fd.append('measurements', JSON.stringify(measurements));
+      
       if (livraisonMode === 'LIVRAISON') {
-        formData.append('livraison[mode]', 'LIVRAISON');
-        formData.append('livraison[adresse_livraison]', JSON.stringify(adresseLivraison));
-      }
-
-      // Photos
-      selectedFiles.forEach((file, index) => {
-        formData.append(`photos[${index}]`, file);
-      });
-
-      // TODO: Use FormData for photos when backend supports multipart
-      const data = await orderApi.create({
-
-        couturier_id: couturierId!,
-        service_type: serviceType,
-        date_rendez_vous: dateRendezVous,
-        heure_rendez_vous: heureRendezVous,
-        date_limite: dateLimite,
-        heure_limite: heureLimite,
-        notes,
-        measurements,
-        livraison: livraisonMode === 'LIVRAISON' ? {
+        fd.append('livraison', JSON.stringify({
           mode: 'LIVRAISON',
           adresse_livraison: {
             nom: adresseLivraison.nom || 'Livraison',
             rue: adresseLivraison.rue || '',
             quartier: adresseLivraison.quartier || '',
-            ville: adresseLivraison.ville || ''
-          }
-        } : undefined
+            ville: adresseLivraison.ville || '',
+          },
+        }));
+      }
 
+      if (prefilledArticle) {
+        fd.append('article_reference', prefilledArticle._id);
+      }
+
+      selectedFiles.forEach(file => {
+        fd.append('photos', file);
       });
 
-      // TODO: estimation when backend supports it
+      await orderApi.create(fd);
       setIsSubmitted(true);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Erreur création commande';
-      console.error("Erreur:", err);
-      setError(errorMessage);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Une erreur est survenue lors de la création de la commande.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-
-
-
-
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-10">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2D6A4F]" />
-      </div>
-    );
-  }
-
-  if (error && !couturier) {
-    return (
-      <div className="text-center p-10 bg-white rounded-xl border border-[#C9B99A]">
-        <p className="text-xl font-bold text-red-600">{error}</p>
-        <Link href="/couturiers" className="text-sm text-gray-600 underline mt-4 block hover:text-[#2D6A4F]">
-          Retour à la liste des couturiers
-        </Link>
+      <div className="flex flex-col items-center justify-center py-24 gap-4 animate-in fade-in duration-700">
+        <Loader2 className="h-12 w-12 animate-spin text-[#2D6A4F]" />
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#2D6A4F] animate-pulse">Initialisation de votre commande...</p>
       </div>
     );
   }
 
   if (isSubmitted) {
     return (
-      <div className="bg-white rounded-xl border border-[#C9B99A] p-8 flex flex-col items-center gap-5 text-center max-w-lg mx-auto">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center bg-green-50">
-          <CheckCircle size={36} className="text-green-600" />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold text-[#2D6A4F]">Demande envoyée !</h2>
-          <p className="text-sm text-gray-600 mt-2">
-            Votre demande a été transmise à <span className="font-semibold text-[#2D6A4F]">{couturier?.nom_marque}</span>.
-            <br />
-            Vous serez notifié(e) dès qu&apos;elle sera acceptée.
-          </p>
-        </div>
-        <div className="flex gap-3 w-full mt-4">
-          <Link href="/dashboard/client/messages" className="flex-1">
-            <button className="w-full py-2 rounded-md font-semibold text-sm border border-[#C9B99A] text-[#4A5568] hover:bg-gray-50">
-              Contacter
-            </button>
-          </Link>
-          <Link href="/dashboard/client/commandes" className="flex-1">
-            <button className="w-full py-2 rounded-md font-semibold text-sm bg-[#2D6A4F] text-white hover:bg-[#1B4332]">
-              Voir mes commandes
-            </button>
-          </Link>
+      <div className="mx-auto max-w-2xl py-12 animate-in zoom-in-95 duration-700">
+        <div className="bg-white rounded-[3rem] border border-gray-100 shadow-[0_40px_80px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="h-48 bg-gradient-to-r from-[#2D6A4F] to-[#52B788] flex items-center justify-center">
+             <div className="w-24 h-24 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20">
+               <CheckCircle size={48} />
+             </div>
+          </div>
+          <div className="p-12 text-center space-y-8">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-black text-[#2D6A4F] uppercase tracking-tight">Demande Envoyée !</h2>
+              <p className="text-sm text-gray-400 font-medium">Votre projet a été transmis avec succès à l&apos;atelier <span className="text-[#2D6A4F] font-black">{couturier?.nom_marque}</span>.</p>
+            </div>
+
+            <div className="bg-gray-50 rounded-[2rem] p-8 border border-gray-100 flex flex-col gap-4 text-left">
+               <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-[#2D6A4F]">
+                     <Info size={18} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Prochaine étape</p>
+                    <p className="text-xs font-bold text-gray-700">Le couturier va examiner votre demande et vous répondra sous peu par message.</p>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <Link href="/dashboard/client/messages" className="flex-1">
+                <button className="w-full py-5 bg-white border border-gray-100 text-[#2D6A4F] rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-[#F5EFE6] transition-all">
+                  Ouvrir la messagerie
+                </button>
+              </Link>
+              <Link href="/dashboard/client/commandes" className="flex-1">
+                <button className="w-full py-5 bg-[#2D6A4F] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-2xl shadow-[#2D6A4F]/20 hover:scale-105 transition-all">
+                  Suivre ma commande
+                </button>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto">
-      <Link href={`/couturiers/${couturierId}`} className="inline-flex items-center gap-2 text-gray-600 hover:text-[#2D6A4F] transition-colors self-start">
-        <ArrowLeft size={16} />
-        Retour au profil de {couturier?.nom_marque}
+    <div className="mx-auto flex max-w-4xl flex-col gap-10 pb-20">
+      {/* Header Back */}
+      <Link
+        href={`/couturiers/${couturierId}`}
+        className="group inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 hover:text-[#2D6A4F] transition-all"
+      >
+        <div className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center group-hover:-translate-x-1 transition-transform shadow-sm">
+           <ArrowLeft size={16} />
+        </div>
+        Retour à l&apos;atelier
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-bold text-[#2D6A4F]">Nouvelle Commande</h1>
-        <p className="text-sm mt-1 text-gray-500">
-          Décrivez votre besoin pour <span className="font-semibold text-[#2D6A4F]">{couturier?.nom_marque}</span>.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h1 className="text-4xl font-black text-[#2D6A4F] tracking-tight">
+            Finaliser votre Projet
+          </h1>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="w-8 h-1 bg-[#2D6A4F] rounded-full"></span>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">
+              Commande chez {couturier?.nom_marque}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Message d'erreur */}
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
-          {error}
+        <div className="p-5 bg-red-50 border border-red-100 rounded-[2rem] text-red-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-4 animate-in shake duration-500">
+          <AlertCircle size={20} /> {error}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-white border border-[#C9B99A] rounded-xl p-6 flex flex-col gap-5">
-        {/* Type de service */}
-        <div>
-          <label htmlFor="service-type" className="block text-sm font-medium text-gray-700 mb-2">
-            Type de service <span className="text-red-500">*</span>
-          </label>
-          <select 
-            id="service-type" 
-            value={serviceType}
-            onChange={(e) => setServiceType(e.target.value)}
-            required 
-            className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-          >
-            <option value="">Choisir un type...</option>
-            {couturier?.services?.map(service => (
-              <option key={service} value={service}>{getServiceLabel(service)}</option>
-            ))}
-            <option value="AUTRE">Autre (à préciser)</option>
-          </select>
-        </div>
-
-        {/* Rendez-vous */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="date-rendez-vous" className="block text-sm font-medium text-gray-700 mb-2">
-              Date de rendez-vous <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="date" 
-              id="date-rendez-vous"
-              value={dateRendezVous}
-              onChange={(e) => setDateRendezVous(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-            />
-            <p className="text-xs text-gray-500 mt-1">Quand vous rencontrerez le couturier pour les mesures</p>
-          </div>
-          <div>
-            <label htmlFor="heure-rendez-vous" className="block text-sm font-medium text-gray-700 mb-2">
-              Heure de rendez-vous <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="time" 
-              id="heure-rendez-vous"
-              value={heureRendezVous}
-              onChange={(e) => setHeureRendezVous(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-            />
-          </div>
-        </div>
-
-        {/* Date limite de livraison */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="date-limite" className="block text-sm font-medium text-gray-700 mb-2">
-              Date limite (livraison) <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="date" 
-              id="date-limite"
-              value={dateLimite}
-              onChange={(e) => setDateLimite(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-            />
-            <p className="text-xs text-gray-500 mt-1">Quand vous souhaitez recevoir votre commande</p>
-          </div>
-          <div>
-            <label htmlFor="heure-limite" className="block text-sm font-medium text-gray-700 mb-2">
-              Heure limite (livraison) <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="time" 
-              id="heure-limite"
-              value={heureLimite}
-              onChange={(e) => setHeureLimite(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D6A4F]"
-            />
-          </div>
-        </div>
-
-        {/* Mode de livraison 🏠 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Mode de réception <span className="text-red-500">*</span>
-          </label>
-          <div className="flex gap-4 mb-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input 
-                type="radio" 
-                name="livraison" 
-                value="RETRAIT_ATELIER"
-                checked={livraisonMode === "RETRAIT_ATELIER"}
-                onChange={() => setLivraisonMode("RETRAIT_ATELIER")}
-                className="text-[#2D6A4F] focus:ring-[#2D6A4F]"
-              />
-              <span className="text-sm text-gray-700">Retrait atelier (gratuit)</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input 
-                type="radio" 
-                name="livraison" 
-                value="LIVRAISON"
-                checked={livraisonMode === "LIVRAISON"}
-                onChange={() => setLivraisonMode("LIVRAISON")}
-                className="text-[#2D6A4F] focus:ring-[#2D6A4F]"
-              />
-              <span className="text-sm text-gray-700">Livraison domicile (+1.500 FCFA)</span>
-            </label>
-          </div>
-
-          {/* 🏠 Formulaire adresse livraison */}
-          {livraisonMode === 'LIVRAISON' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 bg-blue-50 rounded-lg border">
-              <input
-                placeholder="Rue"
-                value={adresseLivraison.rue}
-                onChange={(e) => setAdresseLivraison({...adresseLivraison, rue: e.target.value})}
-                className="p-2 border border-gray-200 rounded-md text-sm"
-              />
-              <input
-                placeholder="Quartier"
-                value={adresseLivraison.quartier}
-                onChange={(e) => setAdresseLivraison({...adresseLivraison, quartier: e.target.value})}
-                className="p-2 border border-gray-200 rounded-md text-sm"
-              />
-              <input
-                placeholder="Ville"
-                value={adresseLivraison.ville}
-                onChange={(e) => setAdresseLivraison({...adresseLivraison, ville: e.target.value})}
-                className="p-2 border border-gray-200 rounded-md text-sm"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Description */}
-        <div>
-          <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-            Description de votre besoin <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            id="description"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={5}
-            required
-            className="w-full px-3 py-2 rounded-md border border-[#C9B99A] bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D6A4F] resize-none"
-            placeholder="Ex: Je souhaite une robe de soirée longue pour un mariage, en tissu bazin riche de couleur bleue..."
-          ></textarea>
-        </div>
-
-        {/* 📏 MESURES (pré-remplies) */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            📏 Vos mesures (optionnel - pré-remplies)
-          </label>
-          {Object.keys(clientMesures).length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-              {Object.entries(clientMesures).map(([key, value]) => (
-                <div key={key} className="text-xs bg-gray-50 p-2 rounded">
-                  <span className="font-medium">{key.replace('_', ' ')}:</span>
-                  <span className="ml-1">{value}cm</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-500 italic">Aucune mesure sauvegardée. Ajoutez-les depuis votre profil.</p>
-          )}
-          <button 
-            type="button"
-            onClick={() => {/* TODO: Éditer mesures */}}
-            className="text-xs text-blue-600 hover:underline"
-          >
-            Modifier mes mesures →
-          </button>
-        </div>
-</xai:function_call >
-
-<xai:function_call name="attempt_completion">
-<parameter name="result">
-          {Object.keys(clientMesures).length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-              {Object.entries(clientMesures).map(([key, value]) => (
-                <div key={key} className="text-xs bg-gray-50 p-2 rounded">
-                  <span className="font-medium">{key.replace('_', ' ')}:</span>
-                  <span className="ml-1">{value}cm</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-500 italic">Aucune mesure sauvegardée. Ajoutez-les depuis votre profil.</p>
-          )}
-          <button 
-            type="button"
-            onClick={() => {/* TODO: Éditer mesures */}}
-            className="text-xs text-blue-600 hover:underline"
-          >
-            Modifier mes mesures →
-          </button>
-        </div>
-
-        {/* 📸 Photos multiples */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Photos modèles (jusqu&apos;à 3)</label>
-          <div className="border-2 border-dashed border-[#C9B99A] rounded-lg p-8 text-center hover:border-[#2D6A4F] transition-colors">
-            <ImageIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <input
-              id="photos-upload"
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                setSelectedFiles(files.slice(0,3));
-              }}
-              className="sr-only"
-            />
-            <label htmlFor="photos-upload" className="cursor-pointer block text-sm font-semibold text-[#2D6A4F] hover:text-[#1B4332]">
-              Cliquez pour ajouter des photos (max 3)
-            </label>
-            <p className="text-xs text-gray-500 mt-1">PNG, JPG jusqu&apos;à 5Mo</p>
-
-            {selectedFiles.length > 0 && (
-              <div className="mt-4 flex gap-2 flex-wrap justify-center">
-                {selectedFiles.map((file, i) => (
-                  <div key={i} className="relative w-20 h-20 bg-gray-100 rounded overflow-hidden">
-                    <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFiles(prev => prev.filter((_, idx) => idx !== i))}
-                      className="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs hover:bg-red-600"
-                      title="..."
-                    >
-                      <X size={10} />
-                    </button>
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-5 gap-10 items-start">
+        {/* Left Column: Form Details */}
+        <div className="lg:col-span-3 space-y-10">
+          <div className="bg-white rounded-[3rem] p-10 border border-gray-100 shadow-[0_30px_70px_rgba(0,0,0,0.03)] space-y-10">
+            
+            {/* Service Selection */}
+            <div className="space-y-6">
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-50 text-[#2D6A4F] flex items-center justify-center">
+                    <Scissors size={20} />
                   </div>
-                ))}
-              </div>
-            )}
+                  <h2 className="text-lg font-black text-[#2D6A4F] uppercase tracking-tight">Type de Prestation</h2>
+               </div>
+               <div className="relative group">
+                  <select
+                    id="service-type"
+                    value={serviceType}
+                    onChange={(e) => setServiceType(e.target.value)}
+                    required
+                    className="w-full px-8 py-5 bg-gray-50 border border-gray-50 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="">Sélectionner une prestation...</option>
+                    {couturier?.services?.map((service) => (
+                      <option key={service} value={service}>
+                        {getServiceLabel(service)}
+                      </option>
+                    ))}
+                    <option value="AUTRE">Autre demande</option>
+                  </select>
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-[#2D6A4F]">
+                    <ArrowLeft size={16} className="-rotate-90" />
+                  </div>
+               </div>
+            </div>
+
+            {/* Timing Section */}
+            <div className="space-y-6">
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center">
+                    <Calendar size={20} />
+                  </div>
+                  <h2 className="text-lg font-black text-[#2D6A4F] uppercase tracking-tight">Planning & Rendez-vous</h2>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Premier RDV (Mesures)</label>
+                    <div className="relative group">
+                      <input
+                        type="date"
+                        value={dateRendezVous}
+                        onChange={(e) => setDateRendezVous(e.target.value)}
+                        required
+                        className="w-full px-6 py-4 bg-gray-50 border border-gray-50 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Heure souhaitée</label>
+                    <input
+                      type="time"
+                      value={heureRendezVous}
+                      onChange={(e) => setHeureRendezVous(e.target.value)}
+                      required
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-50 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                    />
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Livraison Souhaitée</label>
+                    <input
+                      type="date"
+                      value={dateLimite}
+                      onChange={(e) => setDateLimite(e.target.value)}
+                      required
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-50 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Heure Limite</label>
+                    <input
+                      type="time"
+                      value={heureLimite}
+                      onChange={(e) => setHeureLimite(e.target.value)}
+                      required
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-50 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                    />
+                  </div>
+               </div>
+            </div>
+
+            {/* Logistics Section */}
+            <div className="space-y-6">
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center">
+                    <Truck size={20} />
+                  </div>
+                  <h2 className="text-lg font-black text-[#2D6A4F] uppercase tracking-tight">Logistique</h2>
+               </div>
+               
+               <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setLivraisonMode('RETRAIT_ATELIER')}
+                    className={`flex flex-col items-center gap-3 p-6 rounded-3xl border-2 transition-all ${livraisonMode === 'RETRAIT_ATELIER' ? 'bg-[#F5EFE6]/50 border-[#2D6A4F] shadow-lg' : 'bg-gray-50 border-transparent text-gray-400 opacity-60 hover:opacity-100'}`}
+                  >
+                    <MapPin size={24} />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-center">Retrait en Atelier</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLivraisonMode('LIVRAISON')}
+                    className={`flex flex-col items-center gap-3 p-6 rounded-3xl border-2 transition-all ${livraisonMode === 'LIVRAISON' ? 'bg-[#F5EFE6]/50 border-[#2D6A4F] shadow-lg' : 'bg-gray-50 border-transparent text-gray-400 opacity-60 hover:opacity-100'}`}
+                  >
+                    <Truck size={24} />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-center">Livraison Domicile</span>
+                  </button>
+               </div>
+
+               {livraisonMode === 'LIVRAISON' && (
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in slide-in-from-top-4 duration-500">
+                    <input
+                      placeholder="Rue"
+                      value={adresseLivraison.rue || ''}
+                      onChange={(e) => setAdresseLivraison((prev) => ({ ...prev, rue: e.target.value }))}
+                      className="px-6 py-4 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 shadow-sm"
+                    />
+                    <input
+                      placeholder="Quartier"
+                      value={adresseLivraison.quartier || ''}
+                      onChange={(e) => setAdresseLivraison((prev) => ({ ...prev, quartier: e.target.value }))}
+                      className="px-6 py-4 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 shadow-sm"
+                    />
+                    <input
+                      placeholder="Ville"
+                      value={adresseLivraison.ville || ''}
+                      onChange={(e) => setAdresseLivraison((prev) => ({ ...prev, ville: e.target.value }))}
+                      className="px-6 py-4 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 shadow-sm"
+                    />
+                 </div>
+               )}
+            </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-4">
-          <button 
-            type="submit" 
-            disabled={isSubmitting}
-            className="w-full sm:w-auto px-8 py-2.5 rounded-md text-sm font-semibold bg-[#2D6A4F] text-white hover:bg-[#1B4332] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isSubmitting ? "Envoi en cours..." : "Envoyer la demande"}
-          </button>
+        {/* Right Column: Reference & Notes */}
+        <div className="lg:col-span-2 space-y-10">
+          <div className="bg-white rounded-[3rem] p-10 border border-gray-100 shadow-[0_30px_70px_rgba(0,0,0,0.03)] space-y-10">
+            <div className="space-y-6">
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center">
+                    <ImageIcon size={20} />
+                  </div>
+                  <h2 className="text-lg font-black text-[#2D6A4F] uppercase tracking-tight">Référence & Photos</h2>
+               </div>
+
+               {prefilledArticle ? (
+                 <div className="p-6 bg-[#F5EFE6]/50 rounded-3xl border border-[#C9B99A]/20 space-y-4">
+                    <div className="flex items-center gap-3">
+                       <CheckCircle size={16} className="text-[#2D6A4F]" />
+                       <span className="text-[10px] font-black text-[#2D6A4F] uppercase tracking-widest">Modèle sélectionné</span>
+                    </div>
+                    <p className="text-sm font-black text-gray-700 uppercase tracking-tight truncate">{prefilledArticle.titre}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {prefilledArticle.photos?.map((photo: any, index: number) => (
+                        <div key={index} className="w-16 h-16 rounded-xl overflow-hidden border-2 border-white shadow-sm">
+                           <img src={normalizePhotoUrl(photo.url)} className="w-full h-full object-cover" alt="" />
+                        </div>
+                      ))}
+                    </div>
+                 </div>
+               ) : (
+                 <p className="text-[10px] font-bold text-gray-400 italic bg-gray-50 p-6 rounded-3xl border border-gray-50">Aucun modèle spécifique sélectionné. Décrivez votre projet ci-dessous.</p>
+               )}
+
+               <div className="relative">
+                  <textarea
+                    id="description"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={6}
+                    required
+                    className="w-full px-8 py-6 bg-gray-50 border border-gray-50 rounded-[2rem] text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all resize-none"
+                    placeholder="Décrivez votre besoin, le style, les tissus souhaités..."
+                  />
+               </div>
+
+               {/* Custom Photo Upload */}
+               <div className="space-y-4">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Photos Personnelles (Max 3)</label>
+                  <div className="grid grid-cols-3 gap-3">
+                     {previewUrls.map(({ url }, index) => (
+                        <div key={index} className="relative aspect-square rounded-2xl overflow-hidden border-2 border-white shadow-lg">
+                           <img src={url} className="w-full h-full object-cover" alt="" />
+                           <button 
+                             type="button"
+                             onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== index))}
+                             className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-lg flex items-center justify-center shadow-lg"
+                           >
+                             <X size={12} />
+                           </button>
+                        </div>
+                     ))}
+                     {selectedFiles.length < 3 && (
+                        <label className="aspect-square bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#2D6A4F] hover:bg-white transition-all group">
+                           <ImageIcon size={20} className="text-gray-300 group-hover:text-[#2D6A4F] transition-colors" />
+                           <span className="text-[8px] font-black text-gray-300 uppercase group-hover:text-[#2D6A4F]">Ajouter</span>
+                           <input 
+                             type="file" 
+                             className="hidden" 
+                             multiple 
+                             accept="image/*" 
+                             onChange={(e) => setSelectedFiles(prev => [...prev, ...Array.from(e.target.files || [])].slice(0, 3))} 
+                           />
+                        </label>
+                     )}
+                  </div>
+               </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-6 bg-[#2D6A4F] text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.3em] shadow-[0_30px_60px_rgba(45,106,79,0.3)] hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-4"
+            >
+              {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : 'Confirmer la Demande'}
+            </button>
+          </div>
+
+          <div className="p-10 bg-amber-50 rounded-[3rem] border border-amber-100 flex gap-6 items-start">
+             <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-amber-500 shadow-sm shrink-0">
+                <Info size={24} />
+             </div>
+             <div className="space-y-2">
+                <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Note Importante</h4>
+                <p className="text-xs font-bold text-amber-700/80 leading-relaxed italic">
+                  Les tarifs finaux seront discutés et validés avec le couturier après analyse de votre demande.
+                </p>
+             </div>
+          </div>
         </div>
       </form>
     </div>
@@ -491,9 +504,14 @@ const [adresseLivraison, setAdresseLivraison] = useState<Partial<Address>>({ nom
 }
 
 export default function NewOrderPage() {
-    return (
-        <Suspense fallback={<div className="text-center p-10">Chargement du formulaire...</div>}>
-            <NewOrderForm />
-        </Suspense>
-    )
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center py-40 gap-4">
+        <Loader2 className="h-10 w-10 animate-spin text-[#2D6A4F]" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Préparation de l&apos;espace création...</p>
+      </div>
+    }>
+      <NewOrderForm />
+    </Suspense>
+  );
 }

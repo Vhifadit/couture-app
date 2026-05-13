@@ -20,6 +20,17 @@ const createArticle = async (req, res) => {
         message: 'Champs obligatoires: titre, description, categorie, prix' 
       });
     }
+
+    // Gestion des photos uploadées
+    let photosArray = [];
+    if (req.files && req.files.length > 0) {
+      photosArray = req.files.map((file, index) => ({
+        url: file.path.replaceAll('\\', '/'),
+        est_principale: index === 0
+      }));
+    } else if (photos && Array.isArray(photos)) {
+      photosArray = photos;
+    }
     
     const article = await Article.create({
       couturier_id: couturier._id,
@@ -27,7 +38,7 @@ const createArticle = async (req, res) => {
       description,
       categorie,
       prix,
-      photos: photos || [],
+      photos: photosArray,
       tags: tags || [],
       disponible: true
     });
@@ -106,13 +117,24 @@ const updateArticle = async (req, res) => {
     }
     
     const updates = req.body;
-    const allowedUpdates = ['titre', 'description', 'categorie', 'prix', 'photos', 'tags', 'disponible'];
+    const allowedUpdates = ['titre', 'description', 'categorie', 'prix', 'tags', 'disponible'];
     
     allowedUpdates.forEach(field => {
       if (updates[field] !== undefined) {
         article[field] = updates[field];
       }
     });
+
+    // Gestion des nouvelles photos si uploadées
+    if (req.files && req.files.length > 0) {
+      const newPhotos = req.files.map((file, index) => ({
+        url: file.path.replaceAll('\\', '/'),
+        est_principale: article.photos.length === 0 && index === 0
+      }));
+      article.photos = [...article.photos, ...newPhotos];
+    } else if (updates.photos !== undefined) {
+      article.photos = updates.photos;
+    }
     
     await article.save();
     

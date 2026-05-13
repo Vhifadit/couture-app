@@ -16,11 +16,14 @@ export interface User {
  * Correspond au modèle `Photo` imbriqué dans `Couturier`.
  */
 export interface Photo {
+  _id?: string;
   url: string;
   description?: string;
   categorie?: string;
   est_principale?: boolean;
 }
+
+export type CouturierPhoto = Photo;
 
 /**
  * Correspond au modèle `Couturier` du backend.

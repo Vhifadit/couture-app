@@ -1,5 +1,33 @@
+const path = require('path');
+const fs = require('fs');
 const Client = require('../models/client')
 const User = require('../models/user');
+const Couturier = require('../models/couturier');
+
+// Helpers
+const deleteLocalFileIfExists = async (filePath) => {
+  try {
+    if (!filePath) return;
+    const normalized = String(filePath).replaceAll('\\', '/');
+    if (!normalized.includes('uploads/')) return;
+
+    const absoluteCandidates = [
+      path.join(process.cwd(), normalized),
+      path.join(process.cwd(), normalized.startsWith('/') ? normalized.slice(1) : normalized),
+    ];
+
+    for (const candidate of absoluteCandidates) {
+      if (fs.existsSync(candidate)) {
+        await fs.promises.unlink(candidate);
+        return;
+      }
+    }
+  } catch {
+    // ignore
+  }
+};
+
+
 
 // Créer un profil client (après inscription)
 const createProfile = async (req, res) => {
@@ -281,6 +309,57 @@ const deactivateAccount = async (req, res) => {
   }
 };
 
+// ✅ POST /profile/photo (photo de profil)
+const uploadProfilePhoto = async (req, res) => {
+  try {
+    const userId = req.user.sub;
+
+    const client = await Client.findOne({ user_id: userId });
+    if (!client) return res.status(404).json({ message: 'Profil client non trouv e' });
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: 'Aucun fichier recu' });
+
+    // Note: uploadClients saves to uploads/clients, and app.js serves /uploads as static.
+    const photoUrl = `/uploads/clients/${file.filename}`;
+
+    client.photo = photoUrl;
+    await client.save();
+
+    return res.status(201).json({
+      message: 'Photo de profil mise a jour',
+      client: { _id: client._id, photo: client.photo },
+    });
+  } catch (error) {
+    console.error('Upload client photo error:', error);
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
+// ✅ DELETE /profile/photo (supprimer photo de profil)
+const deleteProfilePhoto = async (req, res) => {
+  try {
+    const userId = req.user.sub;
+
+    const client = await Client.findOne({ user_id: userId });
+    if (!client) return res.status(404).json({ message: 'Profil client non trouvé' });
+
+    if (client.photo) {
+      await deleteLocalFileIfExists(client.photo);
+      client.photo = null;
+      await client.save();
+    }
+
+    return res.json({
+      message: 'Photo de profil supprimée',
+      client: { _id: client._id, photo: null },
+    });
+  } catch (error) {
+    console.error('Delete client photo error:', error);
+    return res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+};
+
 module.exports = {
   createProfile,
   getMyProfile,
@@ -292,50 +371,7 @@ module.exports = {
   getClientByUserId,
   getCouturierByUserId,
   deactivateAccount,
-  // Upload photo de profil
-  uploadPhoto: async (req, res) => {
-    try {
-      const userId = req.user.sub;
-      
-      if (!req.file) {
-        return res.status(400).json({ message: 'Aucune photo fournie' });
-      }
-      
-      const client = await Client.findOne({ user_id: userId });
-      if (!client) {
-        // Supprimer le fichier uploadé si erreur
-        const fs = require('fs');
-        const path = require('path');
-        const filePath = path.join(__dirname, '..', '/uploads', req.file.filename);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-        return res.status(404).json({ message: 'Profil client non trouvé' });
-      }
-      
-      // Supprimer l'ancienne photo si elle existe
-      if (client.photo) {
-        const fs = require('fs');
-        const path = require('path');
-        const oldPath = path.join(__dirname, '..', client.photo);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
-        }
-      }
-      
-      // Sauvegarder le chemin de la nouvelle photo
-      client.photo = `/uploads/${req.file.filename}`;
-      await client.save();
-      
-      res.status(201).json({
-        message: 'Photo de profil mise à jour',
-        photo: client.photo
-      });
-      
-    } catch (error) {
-      console.error('Upload photo error:', error);
-      res.status(500).json({ message: 'Erreur serveur', error: error.message });
-    }
-  }
+  uploadProfilePhoto,
+  deleteProfilePhoto,
 };
 

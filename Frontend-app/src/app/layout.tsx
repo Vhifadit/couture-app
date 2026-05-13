@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
-
-const inter = Inter({ subsets: ["latin"] });
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "TailleurConnect",
@@ -18,9 +16,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr">
-      <body className={`${inter.className} bg-pierre-light min-h-screen`}>
+      <body className="bg-pierre-light min-h-screen font-sans">
         <AuthProvider>
           <ToastProvider>
+            <ServiceWorkerRegister />
             {children}
           </ToastProvider>
         </AuthProvider>

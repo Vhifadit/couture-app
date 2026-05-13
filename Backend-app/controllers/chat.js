@@ -2,6 +2,8 @@ const Conversation = require('../models/conversation');
 const Message = require('../models/message');
 const Order = require('../models/order');
 
+const contactPattern = /(\+?\d[\d\s().-]{6,}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|wa\.me|whatsapp|telegram)/i;
+
 // ========== CONVERSATIONS ==========
 
 // ✅ Créer une conversation (automatique lors de la création de commande)
@@ -48,6 +50,7 @@ const getMyConversations = async (req, res) => {
 
     // Formater la réponse avec les compteurs de non-lus appropriés
     const formatted = conversations.map(conv => ({
+      _id: conv._id,
       id: conv._id,
       sujet: conv.sujet,
       statut: conv.statut,
@@ -104,6 +107,7 @@ const getConversation = async (req, res) => {
 
     res.json({
       conversation: {
+        _id: conversation._id,
         id: conversation._id,
         sujet: conversation.sujet,
         statut: conversation.statut,
@@ -146,6 +150,13 @@ const sendMessage = async (req, res) => {
 
     if (!isClient && !isCouturier && userRole !== 'admin') {
       return res.status(403).json({ message: 'Accès interdit' });
+    }
+
+    const order = await Order.findById(conversation.order_id).select('status');
+    if (order && !['CONFIRMED', 'IN_PROGRESS', 'READY', 'DELIVERED', 'COMPLETED', 'LATE'].includes(order.status) && contactPattern.test(contenu)) {
+      return res.status(400).json({
+        message: 'Le partage de coordonnees personnelles est bloque avant validation de la commande'
+      });
     }
 
     // Créer le message
@@ -262,7 +273,7 @@ const closeConversation = async (req, res) => {
     await Message.create({
       conversation_id: id,
       expediteur_id: userId,
-      expediteur_role: 'system',
+      expediteur_role: 'admin',
       contenu: 'Conversation fermée',
       type: 'SYSTEME'
     });
@@ -295,7 +306,7 @@ const getUnreadCount = async (req, res) => {
 
     const total = result.length > 0 ? result[0].total : 0;
 
-    res.json({ non_lus_total: total });
+    res.json({ count: total, non_lus_total: total });
   } catch (error) {
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }

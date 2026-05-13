@@ -12,10 +12,11 @@ export interface AuthResponse {
     name: string;
     email: string;
     role: string;
+    status?: string;
     createdAt?: string;
     updatedAt?: string;
   };
-  tokens: {
+  tokens?: {
     accessToken: string;
     refreshToken: string;
   };
@@ -27,6 +28,7 @@ export interface MeResponse {
   name: string;
   email: string;
   role: string;
+  status?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -85,9 +87,15 @@ export interface CouturierProfile {
     name: string;
     email: string;
   };
+  photo?: string;
   nom_marque: string;
   description?: string;
   telephone: string;
+  contacts?: {
+    email?: string;
+    whatsapp?: string;
+    site_web?: string;
+  };
   adresse?: {
     rue?: string;
     ville: string;
@@ -95,7 +103,14 @@ export interface CouturierProfile {
     code_postal?: string;
     pays?: string;
   };
+  localisation?: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
   disponibilite: boolean;
+  disponibilite_statut?: 'DISPONIBLE' | 'OCCUPE' | 'ABSENT';
+  validation_status?: 'EN_ATTENTE' | 'VALIDE' | 'REFUSE';
+  max_commandes_en_cours?: number;
   services: string[];
   photos: Photo[];
   tarifs?: {
@@ -143,6 +158,7 @@ export interface ClientProfile {
   };
 }
 
+
 // Type pour l'article
 export interface Article {
   _id: string;
@@ -175,6 +191,7 @@ export interface Order {
   date_limite: string;
   heure_limite: string;
   status: string;
+  is_late?: boolean;
   livraison?: Livraison;
   notes?: string;
   measurements?: Measurements;
@@ -185,6 +202,27 @@ export interface Order {
   }>;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface NotificationItem {
+  _id: string;
+  user_id: string;
+  order_id?: string | Order;
+  type: string;
+  titre: string;
+  message: string;
+  lu: boolean;
+  createdAt?: string;
+}
+
+export interface Review {
+  _id: string;
+  order_id: string;
+  client_id: string | { _id: string; name: string };
+  couturier_id: string;
+  note: number;
+  commentaire?: string;
+  createdAt?: string;
 }
 
 // Types pour le chat
@@ -212,10 +250,11 @@ export interface Message {
 
 // Création d'une instance Axios pré-configurée.
 const apiClient = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
 // Type pour les préférences client
@@ -288,13 +327,14 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const response = await axios.post('http://localhost:3001/api/auth/refresh', {
+        const response = await axios.post('/api/auth/refresh', {
           refreshToken,
         });
         
         const { accessToken, refreshToken: newRefreshToken } = response.data.tokens;
         localStorage.setItem('token', accessToken);
         localStorage.setItem('refreshToken', newRefreshToken);
+        document.cookie = `token=${accessToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
         
         // Réessayer la requête originale
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
@@ -335,6 +375,7 @@ apiClient.interceptors.response.use(
 
 export const authApi = {
   login: async (credentials: { email: string; password: string }): Promise<AuthResponse> => {
+
     const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
     return response.data;
   },
@@ -359,39 +400,40 @@ export const authApi = {
     return response.data;
   },
   
-  updateProfile: async (data: { name: string }) => {
+  updateProfile: async (data: { name?: string; email?: string }) => {
     const response = await apiClient.put<{ message: string; user: { id: string; name: string; email: string; role: string } }>('/auth/profile', data);
     return response.data;
   },
-  
+
+  // ✅ Upload photo de profil (client)
   uploadPhoto: async (formData: FormData) => {
-    const response = await apiClient.post<{ message: string; photo: string }>('/auth/photo', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await apiClient.post<{ message: string; client: { _id: string; photo: string | null } }>(
+      '/clients/profile/photo',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  },
+
+  // ✅ Supprimer photo de profil (client)
+  deletePhoto: async () => {
+    const response = await apiClient.delete<{ message: string; client: { _id: string; photo: null } }>(
+      '/clients/profile/photo'
+    );
     return response.data;
   },
 };
 
 // ==================== ORDER API ====================
 
+
+type ApiPayload = FormData | Record<string, unknown>;
+
 export const orderApi = {
   // Créer une commande
-  create: async (orderData: {
-    couturier_id: string;
-    service_type: string;
-    date_rendez_vous: string;
-    heure_rendez_vous: string;
-    date_limite: string;
-    heure_limite: string;
-    notes?: string;
-    measurements?: Measurements;
-    livraison?: {
-      mode: 'RETRAIT_ATELIER' | 'LIVRAISON';
-      adresse_livraison?: Address;
-      cout_livraison?: number;
-    };
-  }) => {
-    const response = await apiClient.post<{ message: string; order: Order }>('/orders', orderData);
+  create: async (data: ApiPayload) => {
+    const config = data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const response = await apiClient.post<{ message: string; order: Order }>('/orders', data, config);
     return response.data;
   },
   
@@ -408,8 +450,8 @@ export const orderApi = {
   },
   
   // Mettre à jour le statut (couturier)
-  updateStatus: async (id: string, status: string) => {
-    const response = await apiClient.put<{ message: string; order: Order }>(`/orders/${id}/status`, { status });
+  updateStatus: async (id: string, status: string, date_livraison_prevue?: string) => {
+    const response = await apiClient.put<{ message: string; order: Order }>(`/orders/${id}/status`, { status, date_livraison_prevue });
     return response.data;
   },
   
@@ -449,6 +491,11 @@ export const orderApi = {
     const response = await apiClient.get<{ livraison: Livraison; commande: Order }>(`/orders/${id}/livraison`);
     return response.data;
   },
+
+  addReview: async (id: string, data: { note: number; commentaire?: string }) => {
+    const response = await apiClient.post<{ message: string; review: Review }>(`/orders/${id}/review`, data);
+    return response.data;
+  },
 };
 
 // ==================== COUTURIER API ====================
@@ -456,10 +503,15 @@ export const orderApi = {
 export const couturierApi = {
   // Rechercher des couturiers
   search: async (params: {
+    q?: string;
     ville?: string;
     quartier?: string;
     service?: string;
     disponible?: boolean;
+    adresse?: string;
+    longitude?: number;
+    latitude?: number;
+    distance?: number;
   } = {}) => {
     const response = await apiClient.get<{ count: number; couturiers: CouturierProfile[] }>('/couturiers/search', { params });
     return response.data;
@@ -488,9 +540,19 @@ export const couturierApi = {
   },
   
   // Obtenir son propre profil (couturier)
-  getMyProfile: async () => {
-    const response = await apiClient.get<{ couturier: CouturierProfile }>('/couturiers/profile/me');
-    return response.data;
+  // IMPORTANT: si le profil n'existe pas encore, le backend renvoie 404.
+  // On le traite comme un cas normal (retourne { couturier: null }) pour éviter les erreurs bloquantes côté front.
+  getMyProfile: async (): Promise<{ couturier: CouturierProfile | null }> => {
+    try {
+      const response = await apiClient.get<{ couturier: CouturierProfile }>('/couturiers/profile/me');
+      return response.data;
+    } catch (error: unknown) {
+      const err = error as { response?: { status?: number } };
+      if (err?.response?.status === 404) {
+        return { couturier: null };
+      }
+      throw error;
+    }
   },
   
   // Obtenir les meilleurs couturiers (pour page d'accueil)
@@ -507,17 +569,52 @@ export const couturierApi = {
   
   // Mettre à jour son profil
   updateProfile: async (data: Partial<CouturierProfile>) => {
-    const response = await apiClient.put<{ message: string; couturier: CouturierProfile }>('/couturiers/profile/me', data);
+    const response = await apiClient.put<{ message: string; couturier: CouturierProfile }>(
+      '/couturiers/profile/me',
+      data
+    );
     return response.data;
   },
+
+
   
   // Définir disponibilité
   setAvailability: async (disponible: boolean) => {
     const response = await apiClient.put<{ message: string; disponibilite: boolean }>('/couturiers/availability', { disponible });
     return response.data;
   },
+
+  setAvailabilityStatus: async (statut: 'DISPONIBLE' | 'OCCUPE' | 'ABSENT') => {
+    const response = await apiClient.put<{
+      message: string;
+      disponibilite: boolean;
+      disponibilite_statut: 'DISPONIBLE' | 'OCCUPE' | 'ABSENT';
+    }>('/couturiers/availability', { statut });
+    return response.data;
+  },
+
+  getDashboard: async () => {
+    const response = await apiClient.get<{
+      couturier: CouturierProfile;
+      stats: {
+        commandes_en_cours: number;
+        commandes_en_retard: number;
+        commandes_terminees: number;
+        messages_non_lus: number;
+      };
+    }>('/couturiers/dashboard');
+    return response.data;
+  },
   
-  // Upload de photos
+
+
+  uploadProfilePhoto: async (formData: FormData) => {
+    const response = await apiClient.post<{ message: string; couturier: { _id: string; photo: string | null } }>('/couturiers/profile/photo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
   uploadPhotos: async (formData: FormData) => {
     const response = await apiClient.post<{ message: string; photos: Photo[] }>('/couturiers/photos', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -525,11 +622,15 @@ export const couturierApi = {
     return response.data;
   },
   
-  // Supprimer une photo
+
+  
+  // Supprimer une photo (portfolio)
   deletePhoto: async (photoId: string) => {
     const response = await apiClient.delete<{ message: string }>(`/couturiers/photos/${photoId}`);
     return response.data;
   },
+
+
   
   // Définir photo principale
   setMainPhoto: async (photoId: string) => {
@@ -540,6 +641,11 @@ export const couturierApi = {
   // Obtenir les photos d'un couturier
   getPhotos: async (id: string) => {
     const response = await apiClient.get<{ couturier: string; photos: Photo[] }>(`/couturiers/${id}/photos`);
+    return response.data;
+  },
+
+  getReviews: async (id: string) => {
+    const response = await apiClient.get<{ count: number; reviews: Review[] }>(`/couturiers/${id}/reviews`);
     return response.data;
   },
   
@@ -681,22 +787,20 @@ export const articleApi = {
   },
   
   // Créer un article (couturier)
-  create: async (data: {
-    titre: string;
-    description: string;
-    categorie: string;
-    prix: number;
-    photos?: string[];
-  }) => {
-    const response = await apiClient.post<{ article: Article }>('/articles', data);
+  create: async (data: ApiPayload) => {
+    const config = data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const response = await apiClient.post<{ article: Article }>('/articles', data, config);
     return response.data;
   },
   
   // Mettre à jour un article (couturier)
-  update: async (id: string, data: Partial<Article>) => {
-    const response = await apiClient.put<{ article: Article }>(`/articles/${id}`, data);
+  update: async (id: string, data: ApiPayload) => {
+    const config = data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const response = await apiClient.put<{ article: Article }>(`/articles/${id}`, data, config);
     return response.data;
   },
+
+
   
   // Supprimer un article (couturier)
   delete: async (id: string) => {
@@ -713,3 +817,116 @@ export const articleApi = {
 
 export default apiClient;
 
+// ==================== ADMIN API ====================
+
+export const adminApi = {
+  // 📊 Statistiques
+  getStats: async () => {
+    const response = await apiClient.get<{
+      users: number;
+      couturiers: number;
+      clients: number;
+      orders: number;
+      articles: number;
+    }>('/admin/stats');
+    return response.data;
+  },
+
+  // 👥 Utilisateurs
+  getUsers: async (params?: Record<string, string>) => {
+    const response = await apiClient.get<{
+      users: Array<{
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        active: boolean;
+        createdAt: string;
+      }>;
+      count: number;
+    }>('/admin/users', { params });
+    return response.data;
+  },
+
+  getUserById: async (id: string) => {
+    const response = await apiClient.get<{
+      user: {
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        active: boolean;
+        createdAt: string;
+      };
+    }>(`/admin/users/${id}`);
+    return response.data;
+  },
+
+  updateUser: async (id: string, data: Record<string, unknown>) => {
+    const response = await apiClient.put<{
+      message: string;
+      user: MeResponse;
+    }>(`/admin/users/${id}`, data);
+    return response.data;
+  },
+
+  toggleUserStatus: async (id: string) => {
+    const response = await apiClient.patch<{
+      message: string;
+      active: boolean;
+    }>(`/admin/users/${id}/toggle-status`);
+    return response.data;
+  },
+
+  // 🧵 Articles
+  getArticles: async (params?: Record<string, string>) => {
+    const response = await apiClient.get<{
+      articles: Article[];
+      count: number;
+    }>('/admin/articles', { params });
+    return response.data;
+  },
+
+  moderateArticle: async (
+    id: string,
+    action: 'approve' | 'reject' | 'delete'
+  ) => {
+    const response = await apiClient.patch<{
+      message: string;
+      article: Article;
+    }>(`/admin/articles/${id}/moderate`, { action });
+    return response.data;
+  },
+
+  // 📦 Commandes
+  getOrders: async (params?: Record<string, string>) => {
+    const response = await apiClient.get<{
+      orders: Order[];
+      count: number;
+    }>('/admin/orders', { params });
+    return response.data;
+  },
+};
+
+// ==================== NOTIFICATION API ====================
+
+export const notificationApi = {
+  getAll: async (limit: number = 50) => {
+    const response = await apiClient.get<{
+      count: number;
+      unread: number;
+      notifications: NotificationItem[];
+    }>('/notifications', { params: { limit } });
+    return response.data;
+  },
+
+  markAsRead: async (id: string) => {
+    const response = await apiClient.patch<{ message: string }>(`/notifications/${id}/read`);
+    return response.data;
+  },
+
+  testReminders: async () => {
+    const response = await apiClient.post<{ reminders: number; late: number }>('/api/notifications/run-reminders');
+    return response.data;
+  },
+};

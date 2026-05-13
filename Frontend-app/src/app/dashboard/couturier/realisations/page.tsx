@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from 'react';
 import { articleApi, couturierApi, Article, CouturierProfile } from '@/lib/api';
-import { Plus, Trash2, Edit, Image, Loader2 } from 'lucide-react';
+import { normalizePhotoUrl } from '@/lib/utils';
+import { Plus, Trash2, Edit, Image, Loader2, X, AlertCircle, Camera } from 'lucide-react';
 import Link from 'next/link';
 
 const CATEGORIES = [
@@ -24,6 +25,8 @@ export default function CouturierRealisationsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -37,17 +40,30 @@ export default function CouturierRealisationsPage() {
     fetchData();
   }, []);
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles = Array.from(files);
+    setSelectedImages(prev => [...prev, ...newFiles]);
+
+    const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+    setPreviews(prev => [...prev, ...newPreviews]);
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+    setPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
   const fetchData = async () => {
     try {
-      // Get profile
       const profilRes = await couturierApi.getMyProfile();
       setProfil(profilRes.couturier);
-
-      // Get articles
       const articlesRes = await articleApi.getMyArticles();
       setArticles(articlesRes.articles || []);
-    } catch (_err) {
-      console.error('Erreur:', _err);
+    } catch (err: unknown) {
+      console.error('Erreur:', err);
     } finally {
       setIsLoading(false);
     }
@@ -60,27 +76,25 @@ export default function CouturierRealisationsPage() {
     setSuccess('');
 
     try {
-      const articleData = {
-        titre: formData.titre,
-        description: formData.description,
-        categorie: formData.categorie,
-        prix: formData.prix ? parseInt(formData.prix) : 0,
-      };
+      const fd = new FormData();
+      fd.append('titre', formData.titre);
+      fd.append('description', formData.description);
+      fd.append('categorie', formData.categorie);
+      fd.append('prix', formData.prix || '0');
+      
+      selectedImages.forEach(image => {
+        fd.append('photos', image);
+      });
 
       if (editingArticle) {
-        await articleApi.update(editingArticle._id, articleData);
+        await articleApi.update(editingArticle._id, fd);
         setSuccess('Réalisation mise à jour avec succès!');
       } else {
-        await articleApi.create(articleData);
+        await articleApi.create(fd);
         setSuccess('Réalisation ajoutée avec succès!');
       }
 
-      // Reset form
-      setFormData({ titre: '', description: '', categorie: 'AUTRE', prix: '' });
-      setShowForm(false);
-      setEditingArticle(null);
-
-      // Refresh articles
+      resetForm();
       const articlesRes = await articleApi.getMyArticles();
       setArticles(articlesRes.articles || []);
     } catch (err: unknown) {
@@ -92,7 +106,7 @@ export default function CouturierRealisationsPage() {
   };
 
   const handleDelete = async (articleId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette réalisation?')) return;
+    if (!confirm('Supprimer cette réalisation ?')) return;
 
     try {
       await articleApi.delete(articleId);
@@ -116,142 +130,183 @@ export default function CouturierRealisationsPage() {
 
   const resetForm = () => {
     setFormData({ titre: '', description: '', categorie: 'AUTRE', prix: '' });
+    setSelectedImages([]);
+    setPreviews([]);
     setEditingArticle(null);
     setShowForm(false);
   };
 
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="animate-spin text-[#2D6A4F]" size={32} />
+      <div className="flex flex-col items-center justify-center h-96 gap-4">
+        <Loader2 className="animate-spin text-[#2D6A4F]" size={40} />
+        <p className="text-[10px] font-black uppercase tracking-widest text-[#2D6A4F] animate-pulse">Chargement de votre catalogue...</p>
       </div>
     );
   }
 
   if (!profil) {
     return (
-      <div className="p-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-yellow-800">
-            Vous devez d&apos;abord créer votre profil de couturier.
-          </p>
-          <Link href="/dashboard/couturier/settings" className="text-[#2D6A4F] underline font-medium">
-            Créer mon profil
-          </Link>
+      <div className="flex flex-col items-center justify-center h-96 gap-6 text-center animate-in fade-in duration-700">
+        <div className="w-24 h-24 bg-amber-50 rounded-[2.5rem] flex items-center justify-center text-amber-500">
+          <AlertCircle size={48} />
         </div>
+        <div>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">Profil Incomplet</h2>
+          <p className="text-sm text-gray-400 font-medium max-w-xs mx-auto mt-2">Vous devez d&apos;abord créer votre profil de couturier pour ajouter des réalisations.</p>
+        </div>
+        <Link href="/dashboard/couturier/settings">
+          <button className="px-10 py-5 bg-[#2D6A4F] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-2xl shadow-[#2D6A4F]/30 hover:scale-105 active:scale-95 transition-all">
+            Créer mon profil
+          </button>
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="flex flex-col gap-10">
+      {/* Header Premium */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#2D6A4F]">Mes Réalisations</h1>
-          <p className="text-sm text-[#718096] mt-1">
-            Gérez vos créations et réalisations pour les faire découvrir à vos clients
-          </p>
+          <h1 className="text-4xl font-black text-[#2D6A4F] tracking-tight">
+            Mes Réalisations
+          </h1>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="w-8 h-1 bg-[#2D6A4F] rounded-full"></span>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">
+              Valorisez votre savoir-faire et vos créations
+            </p>
+          </div>
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-[#2D6A4F] text-white rounded-lg hover:bg-[#1B4332] transition-colors"
+          className="px-8 py-5 bg-[#2D6A4F] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-2xl shadow-[#2D6A4F]/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
         >
           <Plus size={18} />
-          Ajouter une réalisation
+          Nouvelle création
         </button>
       </div>
 
       {/* Messages */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+        <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3 animate-in fade-in duration-300">
+          <AlertCircle size={16} />
           {error}
         </div>
       )}
       {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-600 rounded-lg text-sm">
+        <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3 animate-in fade-in duration-300">
+          <Loader2 size={16} className="text-green-500" />
           {success}
         </div>
       )}
 
-      {/* Form Modal */}
+      {/* Form Modal Premium */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold text-[#2D6A4F] mb-4">
-              {editingArticle ? 'Modifier la réalisation' : 'Nouvelle réalisation'}
-            </h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Titre *
-                </label>
-                <input
-                  type="text"
-                  value={formData.titre}
-                  onChange={(e) => setFormData({ ...formData, titre: e.target.value })}
-                  required
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2D6A4F] focus:border-transparent"
-                  placeholder="Ex: Robe de mariée traditionnelle"
-                />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-2xl p-10 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto no-scrollbar">
+            <div className="flex justify-between items-center mb-8">
+               <div>
+                  <h2 className="text-2xl font-black text-[#2D6A4F] tracking-tight">
+                    {editingArticle ? 'Modifier la création' : 'Nouvelle création'}
+                  </h2>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Détails de votre réalisation</p>
+               </div>
+               <button onClick={resetForm} className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors">
+                  <X size={20} />
+               </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Titre du modèle *</label>
+                    <input
+                      type="text"
+                      value={formData.titre}
+                      onChange={(e) => setFormData({ ...formData, titre: e.target.value })}
+                      required
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                      placeholder="Ex: Robe de mariée soyeuse"
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Catégorie</label>
+                    <select
+                      value={formData.categorie}
+                      onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all appearance-none cursor-pointer"
+                    >
+                      {CATEGORIES.map((cat) => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Estimation Prix (FCFA)</label>
+                    <input
+                      type="number"
+                      value={formData.prix}
+                      onChange={(e) => setFormData({ ...formData, prix: e.target.value })}
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all"
+                      placeholder="Prix indicatif"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Description</label>
+                    <textarea
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      rows={5}
+                      className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/20 focus:bg-white transition-all resize-none"
+                      placeholder="Matériaux, temps de confection..."
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Photos du modèle</label>
+                    <div className="flex flex-wrap gap-3">
+                      {previews.map((preview, index) => (
+                        <div key={index} className="relative w-20 h-20 rounded-2xl overflow-hidden group shadow-lg">
+                          <img src={preview} alt="preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(index)}
+                            className="absolute inset-0 bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                      <label className="w-20 h-20 flex flex-col items-center justify-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-[#2D6A4F] hover:bg-white transition-all">
+                        <Plus size={20} className="text-gray-400" />
+                        <input type="file" multiple accept="image/*" onChange={handleImageChange} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2D6A4F] focus:border-transparent"
-                  placeholder="Décrivez votre création..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Catégorie
-                </label>
-                <select
-                  value={formData.categorie}
-                  onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}
-                  title="Sélectionner une catégorie"
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2D6A4F] focus:border-transparent"
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Prix (FCFA)
-                </label>
-                <input
-                  type="number"
-                  value={formData.prix}
-                  onChange={(e) => setFormData({ ...formData, prix: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2D6A4F] focus:border-transparent"
-                  placeholder="Prix (optionnel)"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-4 pt-6">
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-[#2D6A4F] text-white rounded-lg hover:bg-[#1B4332] disabled:opacity-50 transition-colors"
+                  className="flex-1 py-5 bg-[#2D6A4F] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-2xl shadow-[#2D6A4F]/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                 >
-                  {isSaving && <Loader2 size={16} className="animate-spin" />}
-                  {editingArticle ? 'Mettre à jour' : 'Ajouter'}
+                  {isSaving ? <Loader2 size={18} className="animate-spin mx-auto" /> : (editingArticle ? 'Enregistrer les modifications' : 'Publier la réalisation')}
                 </button>
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="px-10 py-5 bg-gray-100 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all"
                 >
                   Annuler
                 </button>
@@ -261,69 +316,77 @@ export default function CouturierRealisationsPage() {
         </div>
       )}
 
-      {/* Articles Grid */}
+      {/* Articles Grid Premium */}
       {articles.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-          <Image size={48} className="mx-auto text-gray-300 mb-3" aria-hidden="true"/>
-          <p className="text-gray-500">Vous n&apos;avez pas encore de réalisations</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Ajoutez vos créations pour les faire découvrir à vos clients
-          </p>
+        <div className="bg-white rounded-[3rem] border border-gray-100 shadow-[0_30px_70px_rgba(0,0,0,0.03)] p-24 flex flex-col items-center text-center gap-6 animate-in fade-in zoom-in-95 duration-500">
+           <div className="w-24 h-24 bg-gray-50 rounded-[2.5rem] flex items-center justify-center text-gray-200">
+             <Camera size={48} />
+           </div>
+           <div>
+             <h2 className="text-2xl font-black text-gray-900 tracking-tight">Catalogue vide</h2>
+             <p className="text-sm text-gray-400 font-medium max-w-sm mx-auto mt-2">Commencez à ajouter vos plus belles créations pour attirer de nouveaux clients.</p>
+           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {articles.map((article) => (
             <div
               key={article._id}
-              className="bg-white rounded-xl border border-[#C9B99A] overflow-hidden hover:shadow-md transition-shadow"
+              className="group bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden hover:shadow-[0_40px_80px_rgba(0,0,0,0.06)] transition-all duration-500 hover:-translate-y-2"
             >
-              {/* Image placeholder */}
-              <div className="h-40 bg-[#C9B99A] flex items-center justify-center">
+              <div className="relative h-64 bg-[#F5EFE6] overflow-hidden">
                 {article.photos?.[0] ? (
                   <img
-                    src={article.photos[0].url}
+                    src={normalizePhotoUrl(article.photos[0].url)}
                     alt={article.titre}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                 ) : (
-                  <Image size={32} className="text-white/50" aria-hidden="true" />
+                  <div className="w-full h-full flex items-center justify-center text-white/30">
+                     <Image size={48} />
+                  </div>
                 )}
+                <div className="absolute top-4 left-4">
+                   <span className="px-4 py-2 bg-white/90 backdrop-blur-md text-[9px] font-black text-[#2D6A4F] uppercase tracking-widest rounded-full shadow-lg">
+                      {CATEGORIES.find(c => c.value === article.categorie)?.label || article.categorie}
+                   </span>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               </div>
 
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-semibold text-[#2D6A4F]">{article.titre}</h3>
-                  <span className="text-xs px-2 py-1 bg-[#F5EFE6] text-[#718096] rounded-full">
-                    {CATEGORIES.find(c => c.value === article.categorie)?.label || article.categorie}
-                  </span>
-                </div>
-
-                <p className="text-sm text-[#718096] line-clamp-2 mb-3">
-                  {article.description || 'Aucune description'}
-                </p>
-
-                <div className="flex justify-between items-center">
-                  {article.prix > 0 && (
-                    <span className="font-bold text-[#2D6A4F]">
-                      {article.prix.toLocaleString()}FCFA
-                    </span>
-                  )}
-                  <div className="flex gap-2">
+              <div className="p-8">
+                <div className="flex justify-between items-start gap-4 mb-4">
+                  <h3 className="text-sm font-black text-[#2D6A4F] uppercase tracking-tight line-clamp-1">{article.titre}</h3>
+                  <div className="flex gap-2 shrink-0">
                     <button
                       onClick={() => handleEdit(article)}
-                      title="Modifier"
-                      className="p-1.5 text-gray-500 hover:text-[#2D6A4F] hover:bg-gray-100 rounded"
+                      className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 hover:bg-[#2D6A4F] hover:text-white transition-all shadow-sm"
                     >
-                      <Edit size={16} />
+                      <Edit size={14} />
                     </button>
                     <button
                       onClick={() => handleDelete(article._id)}
-                      title="Supprimer"
-                      className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded"
+                      className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 hover:bg-red-500 hover:text-white transition-all shadow-sm"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
+                </div>
+
+                <p className="text-[11px] text-gray-400 font-bold leading-relaxed line-clamp-2 mb-6">
+                  {article.description || 'Pas de description détaillée.'}
+                </p>
+
+                <div className="pt-6 border-t border-gray-50 flex justify-between items-center">
+                  <div className="flex flex-col">
+                     <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Estimation</span>
+                     <span className="text-lg font-black text-[#2D6A4F] tracking-tight">
+                        {article.prix > 0 ? `${article.prix.toLocaleString()} FCFA` : 'Sur devis'}
+                     </span>
+                  </div>
+                  <Link href={`/dashboard/couturier/realisations/${article._id}`} className="text-[9px] font-black text-[#2D6A4F] uppercase tracking-widest hover:underline decoration-2 underline-offset-4">
+                    Aperçu →
+                  </Link>
                 </div>
               </div>
             </div>
@@ -333,4 +396,3 @@ export default function CouturierRealisationsPage() {
     </div>
   );
 }
-

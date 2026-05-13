@@ -2,9 +2,11 @@
 //on a ainsi acces a l'objet http nous 
 //permettant de creer un serveur 
 const http = require('http')
-const mongoose = require('mongoose');
 const app = require('./app');
 const seedRoles = require('./utils/seedRole');
+const seedAdmin = require('./utils/seedAdmin');
+const { processReminders } = require('./controllers/notification');
+
 
 //SUR LE PORT ou l'appli express doit tourner 
 const normalizePort = val => {
@@ -54,8 +56,14 @@ server.on('listening', () => {
   
   // Initialiser les rôles après que le serveur écoute
   seedRoles()
-    .then(() => console.log('Rôles initialisés avec succès'))
-    .catch(err => console.error('Erreur lors de l\'initialisation des rôles:', err));
+    .then(() => seedAdmin({ fromServer: true }))
+    .then(() => console.log('✅ Setup complet: rôles + admin'))
+    .catch(err => console.error('❌ Erreur setup:', err));
+
+  processReminders().catch(err => console.error('Erreur rappels:', err.message));
+  setInterval(() => {
+    processReminders().catch(err => console.error('Erreur rappels:', err.message));
+  }, 60 * 60 * 1000);
 });
 //pour permettre au serveur d'ecouter les requettes 
 server.listen(port)

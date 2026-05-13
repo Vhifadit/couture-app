@@ -30,7 +30,37 @@ const upload = multer({
   // ❌ Pas de fileFilter pour l'instant
 });
 
-// Middleware vide (dossier déjà créé)
-const ensureUploadDir = (req, res, next) => next();
+// Middleware to ensure upload dirs exist
+const ensureUploadDir = (req, res, next) => {
+  const clientsDir = 'uploads/clients';
+  if (!fs.existsSync(clientsDir)) {
+    fs.mkdirSync(clientsDir, { recursive: true });
+  }
+  next();
+};
 
-module.exports = { upload, ensureUploadDir };
+// Client photo upload (single file)
+const uploadClients = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, 'uploads/clients');
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, 'client-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  }),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files allowed'), false);
+    }
+  }
+});
+
+module.exports = { upload, uploadClients, ensureUploadDir };
+

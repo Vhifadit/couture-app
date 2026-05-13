@@ -29,7 +29,8 @@
     "mongodb": "^7.1.0",
     "mongoose": "^9.2.0",
     "multer": "^2.0.2",
-    "nodemailer": "^8.0.2"
+    "nodemailer": "^8.0.2",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

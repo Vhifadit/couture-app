@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+// const crypto = require('crypto'); // Removed - no longer needed
 const User = require('../models/user');
 const Role = require('../models/role');
 
@@ -70,6 +71,8 @@ exports.register = async (req, res) => {
       email: email.toLowerCase(),
       passwordHash,
       role: role._id,
+      status: 'actif', // Le compte est activé immédiatement pour tous les rôles
+      activatedAt: new Date()
     });
 
     console.log('✅ User created:', { userId: user._id, email: user.email });
@@ -80,11 +83,12 @@ exports.register = async (req, res) => {
       name: user.name,
       email: user.email,
       role: role.name,
+      status: user.status,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
 
-    // Générer tokens
+    // Génération immédiate des tokens pour permettre la connexion après l'inscription
     const accessToken = signAccessToken({ sub: user._id.toString(), role: role.name });
     const refreshToken = signRefreshToken({ sub: user._id.toString(), role: role.name });
 
@@ -135,10 +139,15 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
     }
 
-    // Populate le rôle pour obtenir le nom
     await user.populate('role');
     const roleName = user.role?.name || 'client';
-    
+
+    // Sécurité supplémentaire : on s'assure que le statut est actif s'il ne l'était pas
+    if (user.status !== 'actif') {
+      user.status = 'actif';
+      await user.save();
+    }
+
     console.log('✅ Login successful:', { userId: user._id, email: user.email, role: roleName });
 
     const accessToken = signAccessToken({ sub: user._id.toString(), role: roleName });
@@ -149,6 +158,7 @@ exports.login = async (req, res) => {
       name: user.name,
       email: user.email,
       role: roleName,
+      status: user.status,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -172,7 +182,7 @@ exports.refresh = async (req, res) => {
     let payload;
     try {
       payload = jwt.verify(refreshToken, secret);
-    } catch (e) {
+    } catch {
       return res.status(401).json({ message: 'Refresh token invalide ou expiré' });
     }
 
@@ -208,11 +218,37 @@ exports.me = async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role?.name || 'client',
+      status: user.status,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     });
   } catch (err) {
     console.error('❌ Me error:', err);
+    return res.status(500).json({ message: 'Erreur serveur', error: err.message });
+  }
+};
+
+// GET /auth/verify-tailor/:token
+exports.verifyTailorEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const user = await User.findOne({
+      emailValidationToken: token,
+      emailValidationExpires: { $gt: new Date() }
+    }).populate('role');
+
+    if (!user || user.role?.name !== 'couturier') {
+      return res.status(400).json({ message: 'Lien de validation invalide ou expire' });
+    }
+
+    user.status = 'actif';
+    user.emailValidationToken = undefined;
+    user.emailValidationExpires = undefined;
+    user.activatedAt = new Date();
+    await user.save();
+
+    return res.json({ message: 'Compte couturier active' });
+  } catch (err) {
     return res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -260,16 +296,16 @@ exports.updatePassword = async (req, res) => {
   }
 };
 
-// PUT /auth/profile (protégé) - Mettre à jour le profil (nom)
+// PUT /auth/profile (protégé) - Mettre à jour le profil (nom ou email)
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ message: 'Non authentifié' });
 
-    const { name } = req.body;
+    const { name, email } = req.body;
 
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({ message: 'Le nom est requis' });
+    if (!name && !email) {
+      return res.status(400).json({ message: 'Au moins le nom ou l\'email est requis' });
     }
 
     const user = await User.findById(userId);
@@ -277,7 +313,33 @@ exports.updateProfile = async (req, res) => {
       return res.status(404).json({ message: 'Utilisateur non trouvé' });
     }
 
-    user.name = name.trim();
+    if (name !== undefined) {
+      if (name.trim().length === 0) {
+        return res.status(400).json({ message: 'Le nom est requis' });
+      }
+      user.name = name.trim();
+    }
+
+    if (email !== undefined) {
+      const trimmedEmail = email.trim().toLowerCase();
+      if (trimmedEmail.length === 0) {
+        return res.status(400).json({ message: 'L\'email est requis' });
+      }
+      // Vérifier le format email simple
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail)) {
+        return res.status(400).json({ message: 'Format d\'email invalide' });
+      }
+      // Vérifier l'unicité
+      if (trimmedEmail !== user.email) {
+        const existing = await User.findOne({ email: trimmedEmail, _id: { $ne: userId } });
+        if (existing) {
+          return res.status(409).json({ message: 'Cet email est déjà utilisé par un autre utilisateur' });
+        }
+        user.email = trimmedEmail;
+      }
+    }
+
     await user.save();
 
     await user.populate('role');
@@ -297,4 +359,3 @@ exports.updateProfile = async (req, res) => {
     return res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
-

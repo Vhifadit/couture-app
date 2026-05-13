@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useState } from "react";
 
 export default function Header() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { user, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   
@@ -31,25 +31,17 @@ export default function Header() {
   return (
     <>
       <header
-        className="bg-white px-4 sm:px-6 py-3 flex items-center justify-between border-b border-[#C9B99A]"
+        className="bg-white/95 px-4 sm:px-6 py-3 flex items-center justify-between border-b border-[#E6D3B8] backdrop-blur"
       >
-        {user ? (
-          // Utilisateur connecté - logo figé (pas de lien)
-          <div className="flex items-center gap-2 cursor-default">
-            <Image src="/logo.svg" alt="TailleurConnect" width={36} height={36} />
-            <span className="text-lg font-bold text-[#2D6A4F] hidden sm:block">
-              TailleurConnect
-            </span>
-          </div>
-        ) : (
-          // Non connecté - logo cliquable vers accueil
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/logo.svg" alt="TailleurConnect" width={36} height={36} />
-            <span className="text-lg font-bold text-[#2D6A4F] hidden sm:block">
-              TailleurConnect
-            </span>
-          </Link>
-        )}
+        <Link 
+          href={user ? `/dashboard/${user.role}` : "/"} 
+          className="flex items-center gap-2 hover:opacity-90 transition-opacity"
+        >
+          <Image src="/logo.svg" alt="TailleurConnect" width={36} height={36} />
+          <span className="text-lg font-bold text-[#2D6A4F] hidden sm:block">
+            TailleurConnect
+          </span>
+        </Link>
         
         {isAuthPage ? (
           // Page auth - pas de navigation
@@ -70,12 +62,12 @@ export default function Header() {
         ) : (
           // Non connecté - afficher boutons connexion/inscription
           <nav className="flex items-center gap-4">
-            <Link href="/auth?mode=connexion" className="text-sm text-[#4A5568]">
+            <Link href="/auth?mode=connexion" className="text-sm font-medium text-[#4A5568] hover:text-[#2D6A4F]">
               Connexion
             </Link>
             <Link
               href="/auth?mode=inscription"
-              className="px-4 py-2 rounded-md text-sm font-medium text-white bg-[#2D6A4F]"
+              className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#C46B4D] hover:bg-[#B85F42]"
             >
               S&apos;inscrire
             </Link>
@@ -113,4 +105,3 @@ export default function Header() {
     </>
   );
 }
-

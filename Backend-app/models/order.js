@@ -31,8 +31,19 @@ const orderSchema = new mongoose.Schema({
   // Statut commande
   status: {
     type: String,
-    enum: ['PLANNED', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'MODIFIED'],
+    enum: ['PLANNED', 'CONFIRMED', 'IN_PROGRESS', 'READY', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'MODIFIED', 'LATE'],
     default: 'PLANNED'
+  },
+
+  date_acceptation: Date,
+  date_annulation: Date,
+  cancelled_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  is_late: {
+    type: Boolean,
+    default: false
   },
 
   // ✅ LIVRAISON (nouveau)
@@ -84,7 +95,17 @@ const orderSchema = new mongoose.Schema({
     date: { type: Date, default: Date.now },
     type: String,
     description: String
-  }]
+  }],
+
+  rappel_24h_envoye: {
+    type: Boolean,
+    default: false
+  },
+
+  retard_notifie: {
+    type: Boolean,
+    default: false
+  }
 
 
 }, { timestamps: true });

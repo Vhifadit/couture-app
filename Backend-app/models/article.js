@@ -53,6 +53,18 @@ const articleSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+
+  status: {
+    type: String,
+    enum: ['brouillon', 'publie', 'rejete'],
+    default: 'publie'
+  },
+
+  moderatedAt: Date,
+  moderatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   
   // Statistiques
   stats: {
@@ -68,5 +80,6 @@ articleSchema.index({ categorie: 1 });
 articleSchema.index({ disponible: 1 });
 articleSchema.index({ prix: 1 });
 articleSchema.index({ tags: 1 });
+articleSchema.index({ status: 1 });
 
 module.exports = mongoose.model('Article', articleSchema);
